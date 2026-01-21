@@ -1,0 +1,172 @@
+# Admin Gateway Configuration
+server:
+  port: 8085
+
+spring:
+  application:
+    name: admin-gateway
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          enabled: true
+          
+          # Global CORS configuration for SSO cookies
+          globalcors:
+            corsConfigurations:
+              '[/**]':
+                allowedOrigins:
+                  - "http://localhost:5173"
+                  - "http://localhost:5174"
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders: "*"
+                allowCredentials: true
+                maxAge: 3600
+          
+          # Default filters applied to all routes
+          default-filters:
+            # Remove duplicate CORS headers (backend may also set them)
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+                
+          # Route Definitions for Spring Cloud Gateway 4.x
+          routes:
+            # Auth routes (public) - with cookie propagation for SSO
+            - id: auth-routes
+              uri: http://localhost:9000
+              predicates:
+                - Path=/auth/**
+              filters:
+                - name: CookiePropagation
+
+            # CAS Admin API routes
+            - id: cas-admin
+              uri: http://localhost:9000
+              predicates:
+                - Path=/admin/**
+
+            # Policy Engine routes
+            - id: policy-engine
+              uri: http://localhost:9001
+              predicates:
+                - Path=/policies,/policies/**
+              filters:
+                - RewritePath=/policies(?<segment>/?.*), /api/policies${segment}
+
+            # Policy Evaluation routes
+            - id: policy-evaluate
+              uri: http://localhost:9001
+              predicates:
+                - Path=/evaluate/**
+              filters:
+                - RewritePath=/evaluate/(?<segment>.*), /api/evaluate/${segment}
+
+            # Organization Service routes
+            - id: organization-geo
+              uri: http://localhost:9003
+              predicates:
+                - Path=/org/geo/**
+              filters:
+                - RewritePath=/org/geo/(?<segment>.*), /api/geo/${segment}
+
+            - id: organization-branches
+              uri: http://localhost:9003
+              predicates:
+                - Path=/org/branches,/org/branches/**
+              filters:
+                - RewritePath=/org/branches(?<segment>/?.*), /api/branches${segment}
+
+            - id: organization-departments
+              uri: http://localhost:9003
+              predicates:
+                - Path=/org/departments,/org/departments/**
+              filters:
+                - RewritePath=/org/departments(?<segment>/?.*), /api/departments${segment}
+
+            - id: organization-groups
+              uri: http://localhost:9003
+              predicates:
+                - Path=/org/groups,/org/groups/**
+              filters:
+                - RewritePath=/org/groups(?<segment>/?.*), /api/groups${segment}
+
+            # Workflow Service routes
+            - id: workflow-templates
+              uri: http://localhost:9002
+              predicates:
+                - Path=/workflow/templates,/workflow/templates/**
+              filters:
+                - RewritePath=/workflow/templates(?<segment>/?.*), /api/process-templates${segment}
+
+            - id: workflow-instances
+              uri: http://localhost:9002
+              predicates:
+                - Path=/workflow/instances,/workflow/instances/**
+              filters:
+                - RewritePath=/workflow/instances(?<segment>/?.*), /api/process-instances${segment}
+
+            - id: workflow-tasks
+              uri: http://localhost:9002
+              predicates:
+                - Path=/workflow/tasks,/workflow/tasks/**
+              filters:
+                - RewritePath=/workflow/tasks(?<segment>/?.*), /api/tasks${segment}
+
+            - id: workflow-history
+              uri: http://localhost:9002
+              predicates:
+                - Path=/workflow/history,/workflow/history/**
+              filters:
+                - RewritePath=/workflow/history(?<segment>/?.*), /api/history${segment}
+
+            - id: workflow-configs
+              uri: http://localhost:9002
+              predicates:
+                - Path=/workflow/workflow-configs,/workflow/workflow-configs/**
+              filters:
+                - RewritePath=/workflow/workflow-configs(?<segment>/?.*), /api/workflow-configs${segment}
+
+            # Form Service routes
+            - id: form-definitions
+              uri: http://localhost:9006
+              predicates:
+                - Path=/forms/definitions,/forms/definitions/**
+              filters:
+                - RewritePath=/forms/definitions(?<segment>/?.*), /api/forms${segment}
+
+            - id: form-submissions
+              uri: http://localhost:9006
+              predicates:
+                - Path=/forms/submissions,/forms/submissions/**
+              filters:
+                - RewritePath=/forms/submissions(?<segment>/?.*), /api/submissions${segment}
+
+            # JWKS endpoint (public)
+            - id: jwks
+              uri: http://localhost:9000
+              predicates:
+                - Path=/.well-known/**
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, gateway
+
+# CAS Configuration for JWT Validation
+cas:
+  jwks-url: http://localhost:9000/.well-known/jwks.json
+  issuer: http://localhost:9000
+  audience: cas_admin-api
+
+# Logging
+logging:
+  level:
+    com.cas: DEBUG
+    org.springframework.cloud.gateway: DEBUG

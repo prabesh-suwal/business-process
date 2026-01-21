@@ -1,0 +1,62 @@
+# Scope mappings for LMS Gateway
+# Maps API endpoints to required scopes
+
+mappings:
+  # Loan endpoints
+  - pattern: "GET /api/loans"
+    scopes:
+      - loan.read
+      
+  - pattern: "GET /api/loans/*"
+    scopes:
+      - loan.read
+      
+  - pattern: "POST /api/loans"
+    scopes:
+      - loan.create
+      
+  - pattern: "PUT /api/loans/*"
+    scopes:
+      - loan.update
+      
+  - pattern: "DELETE /api/loans/*"
+    scopes:
+      - loan.delete
+      
+  - pattern: "POST /api/loans/*/approve"
+    scopes:
+      - loan.approve
+      
+  - pattern: "POST /api/loans/*/reject"
+    scopes:
+      - loan.reject
+      
+  - pattern: "POST /api/loans/*/disburse"
+    scopes:
+      - loan.disburse
+
+  # Customer endpoints
+  - pattern: "GET /api/customers"
+    scopes:
+      - customer.read
+      
+  - pattern: "GET /api/customers/*"
+    scopes:
+      - customer.read
+      
+  - pattern: "POST /api/customers"
+    scopes:
+      - customer.create
+      
+  - pattern: "PUT /api/customers/*"
+    scopes:
+      - customer.update
+
+  # Report endpoints
+  - pattern: "GET /api/reports/**"
+    scopes:
+      - report.read
+      
+  - pattern: "POST /api/reports/export"
+    scopes:
+      - report.export

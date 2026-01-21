@@ -1,0 +1,66 @@
+server:
+  port: 9004
+
+spring:
+  application:
+    name: notification-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/notification_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  # Email configuration (Gmail example - use env vars in production)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:your-email@gmail.com}
+    password: ${MAIL_PASSWORD:your-app-password}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+    test-connection: false
+
+  # Thymeleaf for email templates
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    cache: false
+
+# Notification settings
+notification:
+  email:
+    enabled: true
+    from: ${MAIL_FROM:noreply@example.com}
+    from-name: LMS System
+  sms:
+    enabled: false
+    # Provider config (Twilio, etc.)
+  push:
+    enabled: false
+
+# Async executor settings
+spring.task.execution:
+  pool:
+    core-size: 5
+    max-size: 10
+    queue-capacity: 100
+
+logging:
+  level:
+    com.enterprise.notification: DEBUG

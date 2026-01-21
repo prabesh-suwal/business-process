@@ -1,0 +1,44 @@
+server:
+  port: 9005
+
+spring:
+  application:
+    name: document-service
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/document_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# Document storage configuration
+document:
+  storage:
+    type: local  # local or minio
+    local:
+      base-path: ./uploads
+    minio:
+      endpoint: http://localhost:9000
+      access-key: minioadmin
+      secret-key: minioadmin
+      bucket: documents
+
+# Logging
+logging:
+  level:
+    com.enterprise.document: DEBUG
+    org.springframework.web: INFO

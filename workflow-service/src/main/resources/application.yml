@@ -1,0 +1,63 @@
+server:
+  port: 9002
+
+spring:
+  application:
+    name: workflow-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/workflow_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none  # Flyway handles schema creation
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  # Flyway Migrations - configured in FlywayConfig.java for proper ordering
+  flyway:
+    enabled: false  # We configure Flyway manually in FlywayConfig.java
+
+# Flowable Configuration
+flowable:
+  # Don't auto-deploy processes from resources
+  process-definition-location-prefix: classpath*:/processes/
+  database-schema-update: true
+  async-executor-activate: true
+  history-level: full
+
+# CAS Integration
+cas:
+  server:
+    url: http://localhost:9000
+  jwks-url: http://localhost:9000/.well-known/jwks.json
+
+# Form Service Integration  
+form-service:
+  url: http://localhost:9006
+
+# Notification Service Integration
+notification-service:
+  url: http://localhost:9004
+
+# Integration Service
+integration-service:
+  url: http://localhost:9005
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.flowable: INFO
+    com.enterprise.workflow: DEBUG

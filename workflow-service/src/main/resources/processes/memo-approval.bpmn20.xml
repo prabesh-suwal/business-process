@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://www.flowable.org/processdef">
+
+    <process id="memo_approval_process" name="Memo Approval Process" isExecutable="true">
+
+        <startEvent id="startEvent" name="Start"></startEvent>
+
+        <sequenceFlow id="flow1" sourceRef="startEvent" targetRef="approveTask"></sequenceFlow>
+
+        <userTask id="approveTask" name="Manager Approval" flowable:assignee="${manager}">
+            <documentation>
+                Please review the memo: ${memoNumber} - ${subject}
+            </documentation>
+            <extensionElements>
+                <!-- Form definition key if using form-service -->
+                <flowable:formProperty id="outcome" name="Outcome" type="enum" required="true">
+                    <flowable:value id="approve" name="Approve"/>
+                    <flowable:value id="reject" name="Reject"/>
+                </flowable:formProperty>
+            </extensionElements>
+        </userTask>
+
+        <sequenceFlow id="flow2" sourceRef="approveTask" targetRef="decisionGateway"></sequenceFlow>
+
+        <exclusiveGateway id="decisionGateway" name="Decision"></exclusiveGateway>
+
+        <sequenceFlow id="flow3" sourceRef="decisionGateway" targetRef="approvedServiceTask">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${outcome == 'approve'}]]></conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flow4" sourceRef="decisionGateway" targetRef="rejectedServiceTask">
+             <conditionExpression xsi:type="tFormalExpression"><![CDATA[${outcome == 'reject'}]]></conditionExpression>
+        </sequenceFlow>
+
+        <!-- Service Tasks to Callback Memo Service -->
+        <!-- Using HTTP Task would be ideal, but falling back to simple JavaDelegate or Expression if HTTP not configured -->
+        <!-- For MVP, assuming workflow-service has a generic HttpDelegate or similar. 
+             If not, using a placeholder implementation expression that logs. 
+             Ideally: http://memo-gateway/api/memos/${memoId}/status?status=APPROVED -->
+        
+        <serviceTask id="approvedServiceTask" name="Mark Approved" flowable:type="http">
+            <extensionElements>
+                <flowable:field name="requestMethod">
+                    <flowable:string><![CDATA[PUT]]></flowable:string>
+                </flowable:field>
+                <flowable:field name="requestUrl">
+                    <flowable:expression><![CDATA[http://memo-service:9008/api/memos/${memoId}/status?status=APPROVED]]></flowable:expression>
+                </flowable:field>
+            </extensionElements>
+        </serviceTask>
+
+        <serviceTask id="rejectedServiceTask" name="Mark Rejected" flowable:type="http">
+            <extensionElements>
+                <flowable:field name="requestMethod">
+                    <flowable:string><![CDATA[PUT]]></flowable:string>
+                </flowable:field>
+                <flowable:field name="requestUrl">
+                    <flowable:expression><![CDATA[http://memo-service:9008/api/memos/${memoId}/status?status=REJECTED]]></flowable:expression>
+                </flowable:field>
+            </extensionElements>
+        </serviceTask>
+
+        <sequenceFlow id="flow5" sourceRef="approvedServiceTask" targetRef="endEvent"></sequenceFlow>
+        <sequenceFlow id="flow6" sourceRef="rejectedServiceTask" targetRef="endEvent"></sequenceFlow>
+
+        <endEvent id="endEvent" name="End"></endEvent>
+
+    </process>
+
+</definitions>

@@ -1,0 +1,74 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: wfm-gateway
+
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        service-name: ${spring.application.name}
+        health-check-path: /actuator/health
+        health-check-interval: 15s
+
+    gateway:
+      routes:
+        # Workflow Service
+        - id: wfm-workflow-service
+          uri: lb://wfm-workflow-service
+          predicates:
+            - Path=/api/workflows/**
+          filters:
+            - name: JwtAuthentication
+            - name: ScopeEnforcement
+
+        # Task Service  
+        - id: wfm-task-service
+          uri: lb://wfm-task-service
+          predicates:
+            - Path=/api/tasks/**
+          filters:
+            - name: JwtAuthentication
+            - name: ScopeEnforcement
+
+        # Process Service
+        - id: wfm-process-service
+          uri: lb://wfm-process-service
+          predicates:
+            - Path=/api/processes/**
+          filters:
+            - name: JwtAuthentication
+            - name: ScopeEnforcement
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+
+# Gateway configuration
+gateway:
+  product-code: WFM
+  audience: wfm-api
+  
+  jwt:
+    jwks-uri: http://localhost:9000/.well-known/jwks.json
+    issuer: http://localhost:9000
+    
+  rate-limit:
+    enabled: true
+    default-limit: 100
+    window-seconds: 60
+
+logging:
+  level:
+    com.wfm.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG

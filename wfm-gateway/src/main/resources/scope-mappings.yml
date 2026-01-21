@@ -1,0 +1,57 @@
+# Scope mappings for WFM Gateway
+
+mappings:
+  # Workflow endpoints
+  - pattern: "GET /api/workflows"
+    scopes:
+      - workflow.read
+      
+  - pattern: "GET /api/workflows/*"
+    scopes:
+      - workflow.read
+      
+  - pattern: "POST /api/workflows"
+    scopes:
+      - workflow.create
+      
+  - pattern: "PUT /api/workflows/*"
+    scopes:
+      - workflow.update
+      
+  - pattern: "DELETE /api/workflows/*"
+    scopes:
+      - workflow.delete
+      
+  - pattern: "POST /api/workflows/*/execute"
+    scopes:
+      - workflow.execute
+
+  # Task endpoints
+  - pattern: "GET /api/tasks"
+    scopes:
+      - task.read
+      
+  - pattern: "GET /api/tasks/*"
+    scopes:
+      - task.read
+      
+  - pattern: "POST /api/tasks/*/complete"
+    scopes:
+      - task.complete
+      
+  - pattern: "POST /api/tasks/*/assign"
+    scopes:
+      - task.assign
+
+  # Process endpoints
+  - pattern: "GET /api/processes"
+    scopes:
+      - process.read
+      
+  - pattern: "GET /api/processes/*"
+    scopes:
+      - process.read
+      
+  - pattern: "POST /api/processes/*/cancel"
+    scopes:
+      - process.cancel

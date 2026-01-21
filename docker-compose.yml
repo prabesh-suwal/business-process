@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: cas-postgres
+    environment:
+      POSTGRES_DB: cas
+      POSTGRES_USER: cas
+      POSTGRES_PASSWORD: caspass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cas-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  consul:
+    image: hashicorp/consul:1.17
+    container_name: cas-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -dev -ui -client=0.0.0.0
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Workflow Service Database
+  workflow-db:
+    image: postgres:16
+    container_name: workflow-postgres
+    environment:
+      POSTGRES_DB: workflow_db
+      POSTGRES_USER: workflow
+      POSTGRES_PASSWORD: workflow123
+    ports:
+      - "5435:5432"
+    volumes:
+      - workflow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Form Service Database
+  form-db:
+    image: postgres:16
+    container_name: form-postgres
+    environment:
+      POSTGRES_DB: form_db
+      POSTGRES_USER: form
+      POSTGRES_PASSWORD: form123
+    ports:
+      - "5436:5432"
+    volumes:
+      - form_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U form"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Notification Service Database
+  notification-db:
+    image: postgres:16
+    container_name: notification-postgres
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification123
+    ports:
+      - "5437:5432"
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Integration Service Database
+  integration-db:
+    image: postgres:16
+    container_name: integration-postgres
+    environment:
+      POSTGRES_DB: integration_db
+      POSTGRES_USER: integration
+      POSTGRES_PASSWORD: integration123
+    ports:
+      - "5438:5432"
+    volumes:
+      - integration_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U integration"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9010:9000"    # API
+      - "9011:9001"    # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+volumes:
+  postgres_data:
+  workflow_data:
+  form_data:
+  notification_data:
+  integration_data:
+  minio_data:
