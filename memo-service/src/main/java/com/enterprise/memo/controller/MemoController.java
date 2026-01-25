@@ -65,4 +65,38 @@ public class MemoController {
         memoService.updateMemoStatus(id, status);
         return ResponseEntity.ok().build();
     }
+
+    /**
+     * Get memos that user can view (including view-only access).
+     */
+    @GetMapping("/viewable")
+    public ResponseEntity<List<MemoDTO>> getViewableMemos(
+            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
+            @RequestHeader(value = "X-User-Roles", required = false) String roles,
+            @RequestHeader(value = "X-User-Department", required = false) String departmentId) {
+
+        List<String> roleList = roles != null
+                ? java.util.Arrays.asList(roles.split(","))
+                : java.util.List.of();
+
+        return ResponseEntity.ok(memoService.getViewableMemos(userId, roleList, departmentId));
+    }
+
+    /**
+     * Check if user can view a specific memo.
+     */
+    @GetMapping("/{id}/can-view")
+    public ResponseEntity<Boolean> canViewMemo(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
+            @RequestHeader(value = "X-User-Roles", required = false) String roles,
+            @RequestHeader(value = "X-User-Department", required = false) String departmentId) {
+
+        List<String> roleList = roles != null
+                ? java.util.Arrays.asList(roles.split(","))
+                : java.util.List.of();
+
+        boolean canView = memoService.canViewMemo(id, userId, roleList, departmentId);
+        return ResponseEntity.ok(canView);
+    }
 }

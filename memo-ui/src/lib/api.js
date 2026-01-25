@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API Configuration - Memo Gateway
-const GATEWAY_URL = 'http://localhost:8088';
+const GATEWAY_URL = 'http://localhost:8086'; // gateway-product port
 
 const api = axios.create({
     baseURL: GATEWAY_URL,
@@ -11,22 +11,30 @@ const api = axios.create({
     withCredentials: true // Important for SSO cookies
 });
 
-// Add interceptor to inject X-User-Id (simulating Gateway behavior for dev/demo if needed, 
-// though typically Gateway handles this. For local dev against backend directly, we might need it.
-// But here we go through Gateway or Vite Proxy. 
-// If going through Vite Proxy -> Gateway, Gateway might expect cookie.
-// If we are mocking user, we can send X-User-Id.
+// Request interceptor to add Bearer token
+api.interceptors.request.use(
+    config => {
+        const token = localStorage.getItem('access_token');
+        // console.log(`[API Request] ${config.method.toUpperCase()} ${config.url}`);
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return config;
+    },
+    error => Promise.reject(error)
+);
+
 // Interceptor to handle 401s
 api.interceptors.response.use(
     response => response,
     error => {
         if (error.response && error.response.status === 401) {
             console.warn("Unauthorized - session might be expired.");
-            // Redirect to Internal Login
+            localStorage.removeItem('access_token');
+            // We rely on React State (AuthContext) to update UI, but window redirect is a safety net
             if (!window.location.pathname.includes('/login')) {
                 window.location.href = '/login';
             }
-            return Promise.reject(error);
         }
         return Promise.reject(error);
     }
@@ -35,15 +43,35 @@ api.interceptors.response.use(
 export const MemoApi = {
     // Config
     getCategories: () => api.get('/memo-config/categories').then(res => res.data),
+    createCategory: (data) => api.post('/memo-config/categories', data).then(res => res.data),
+
     getTopics: (categoryId) => api.get(`/memo-config/categories/${categoryId}/topics`).then(res => res.data),
+    createTopic: (data) => api.post('/memo-config/topics', data).then(res => res.data),
+
+    getTopic: (topicId) => api.get(`/memo-config/topics/${topicId}`).then(res => res.data),
+    updateTopicWorkflow: (topicId, workflowXml) => api.put(`/memo-config/topics/${topicId}/workflow`, workflowXml, {
+        headers: { 'Content-Type': 'text/plain' }
+    }).then(res => res.data),
+    updateTopicFormSchema: (topicId, formSchema) => api.put(`/memo-config/topics/${topicId}/form-schema`, formSchema).then(res => res.data),
+
+    // Deploy workflow to Flowable engine and link back templateId
+    deployTopicWorkflow: (topicId) => api.post(`/memo-config/topics/${topicId}/deploy-workflow`).then(res => res.data),
+
+    // Update topic viewer configuration
+    updateTopicViewers: (topicId, viewerConfig) => api.patch(`/memo-config/topics/${topicId}/viewers`, viewerConfig).then(res => res.data),
 
     // Memos
     createDraft: (data) => api.post('/memos/draft', data).then(res => res.data),
     getMemo: (id) => api.get(`/memos/${id}`).then(res => res.data),
     updateMemo: (id, data) => api.put(`/memos/${id}`, data).then(res => res.data),
+    submitMemo: (id) => api.post(`/memos/${id}/submit`).then(res => res.data),
     getMyMemos: () => api.get('/memos/my-memos').then(res => res.data),
 
-    // File Upload (Future)
+    // View-only access
+    getViewableMemos: () => api.get('/memo/api/memos/viewable').then(res => res.data),
+    canViewMemo: (id) => api.get(`/memo/api/memos/${id}/can-view`).then(res => res.data),
+
+    // Attachments
     uploadAttachment: (memoId, file) => {
         const formData = new FormData();
         formData.append('file', file);
@@ -56,15 +84,116 @@ export const MemoApi = {
 
     // Auth
     getSession: () => api.get('/auth/session').then(res => res.data),
+
     login: (username, password) => {
-        // Post to Gateway (which proxies to CAS)
-        // Matching cas-admin-ui: Send JSON body.
         return api.post('/auth/login', {
             username,
             password,
-            productCode: 'MMS' // Assuming product code is required/useful
+            productCode: 'MMS'
+        }).then(res => {
+            if (res.data.tokens && res.data.tokens.access_token) {
+                localStorage.setItem('access_token', res.data.tokens.access_token);
+            }
+            return res.data;
+        });
+    },
+
+    logout: () => {
+        return api.post('/auth/logout/global').then(() => {
+            localStorage.removeItem('access_token');
         });
     }
 };
 
+export const WorkflowApi = {
+    // Process Templates
+    listTemplates: () => api.get('/workflow/api/process-templates').then(res => res.data.content),
+    getTemplate: (id) => api.get(`/workflow/api/process-templates/${id}`).then(res => res.data),
+    createTemplate: (data) => api.post('/workflow/api/process-templates', data).then(res => res.data),
+    updateTemplate: (id, data) => api.put(`/workflow/api/process-templates/${id}`, data).then(res => res.data),
+    deployTemplate: (id) => api.post(`/workflow/api/process-templates/${id}/deploy`).then(res => res.data),
+    createNewVersion: (id) => api.post(`/workflow/api/process-templates/${id}/new-version`).then(res => res.data),
+
+    // Workflow Variables
+    getVariables: () => api.get('/workflow/api/workflow-variables').then(res => res.data),
+};
+
+export const TaskApi = {
+    // Task Inbox - routed through memo-service
+    getInbox: () => api.get('/memo/api/tasks/inbox').then(res => res.data),
+    getTask: (taskId) => api.get(`/memo/api/tasks/${taskId}`).then(res => res.data),
+    claimTask: (taskId) => api.post(`/memo/api/tasks/${taskId}/claim`).then(res => res.data),
+
+    // Task actions (approve, reject, send_back, etc.)
+    completeTask: (taskId, action, comment, variables) => api.post(`/memo/api/tasks/${taskId}/action`, {
+        action,
+        comment,
+        variables
+    }).then(res => res.data),
+
+    // Get tasks for a specific memo
+    getTasksForMemo: (memoId) => api.get(`/memo/api/tasks/memo/${memoId}`).then(res => res.data),
+
+    // Committee voting (still through workflow for now, TODO: move to memo)
+    castVote: (taskId, decision, comment) => api.post(`/workflow/api/tasks/${taskId}/vote`, { decision, comment }).then(res => res.data),
+    getVoteStatus: (taskId) => api.get(`/workflow/api/tasks/${taskId}/vote-status`).then(res => res.data),
+};
+
+/**
+ * CAS Admin API - Dynamic dropdown data for workflow configuration.
+ * All roles/groups/departments fetched from CAS server.
+ */
+export const CasAdminApi = {
+    // Assignment type options
+    getAssignmentTypes: () => api.get('/cas-admin/workflow-config/assignment-types').then(res => res.data),
+
+    // Roles for a product
+    getRoles: (productCode = 'MMS') => api.get(`/cas-admin/workflow-config/roles?productCode=${productCode}`).then(res => res.data),
+
+    // Groups/Committees
+    getGroups: (productCode = 'MMS') => api.get(`/cas-admin/workflow-config/groups?productCode=${productCode}`).then(res => res.data),
+
+    // Departments
+    getDepartments: (productCode = 'MMS') => api.get(`/cas-admin/workflow-config/departments?productCode=${productCode}`).then(res => res.data),
+
+    // Users for viewer selection
+    getUsers: (productCode = 'MMS') => api.get(`/cas-admin/workflow-config/users?productCode=${productCode}`).then(res => res.data),
+
+    // Organizational scopes
+    getScopes: () => api.get('/cas-admin/workflow-config/scopes').then(res => res.data),
+
+    // Condition operators
+    getOperators: () => api.get('/cas-admin/workflow-config/operators').then(res => res.data),
+
+    // Escalation actions
+    getEscalationActions: () => api.get('/cas-admin/workflow-config/escalation-actions').then(res => res.data),
+
+    // SLA duration options
+    getSlaDurations: () => api.get('/cas-admin/workflow-config/sla-durations').then(res => res.data),
+
+    // Preview assignment - resolve users
+    previewAssignment: (data) => api.post('/cas-admin/workflow-config/preview-assignment', data).then(res => res.data),
+};
+
+/**
+ * Workflow Config API - Per-step configuration for memo topics.
+ */
+export const WorkflowConfigApi = {
+    // Step configurations
+    getStepConfigs: (topicId) => api.get(`/memo-admin/topics/${topicId}/workflow-config/steps`).then(res => res.data),
+    getStepConfig: (topicId, taskKey) => api.get(`/memo-admin/topics/${topicId}/workflow-config/steps/${taskKey}`).then(res => res.data),
+    saveStepConfig: (topicId, taskKey, config) => api.put(`/memo-admin/topics/${topicId}/workflow-config/steps/${taskKey}`, config).then(res => res.data),
+
+    // Gateway decision rules
+    getGatewayRules: (topicId) => api.get(`/memo-admin/topics/${topicId}/workflow-config/gateways`).then(res => res.data),
+    getGatewayRule: (topicId, gatewayKey) => api.get(`/memo-admin/topics/${topicId}/workflow-config/gateways/${gatewayKey}`).then(res => res.data),
+    saveGatewayRule: (topicId, gatewayKey, rule) => api.put(`/memo-admin/topics/${topicId}/workflow-config/gateways/${gatewayKey}`, rule).then(res => res.data),
+    activateGatewayRule: (topicId, ruleId) => api.post(`/memo-admin/topics/${topicId}/workflow-config/gateways/${ruleId}/activate`).then(res => res.data),
+
+    // Test gateway evaluation
+    evaluateGateway: (topicId, gatewayKey, memoData) => api.post(`/memo-admin/topics/${topicId}/workflow-config/gateways/${gatewayKey}/evaluate`, memoData).then(res => res.data),
+};
+
 export default api;
+
+

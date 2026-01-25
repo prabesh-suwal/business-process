@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, PlusCircle, LayoutDashboard, Settings, LogOut, User, Menu } from 'lucide-react';
+import { FileText, PlusCircle, LayoutDashboard, Settings, LogOut, User, Menu, Eye } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { MemoApi } from '../lib/api';
 import { Toaster } from 'sonner';
@@ -26,21 +26,13 @@ const NavItem = ({ to, icon: Icon, label }) => {
     );
 };
 
+import { useAuth } from '../context/AuthContext';
+
 export default function Layout() {
-    const [user, setUser] = useState(null);
+    const { user, logout } = useAuth();
     const navigate = useNavigate();
 
-    useEffect(() => {
-        MemoApi.getSession()
-            .then(userData => {
-                console.log("SSO Session Active:", userData);
-                setUser(userData);
-            })
-            .catch(err => {
-                console.log("No active SSO session, redirecting to login");
-                navigate('/login');
-            });
-    }, [navigate]);
+    // No need for useEffect session check, ProtectedRoute handles it
 
     return (
         <div className="min-h-screen bg-background flex flex-col md:flex-row font-sans text-foreground">
@@ -62,6 +54,8 @@ export default function Layout() {
                         </div>
                         <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
                         <NavItem to="/create" icon={PlusCircle} label="New Memo" />
+                        <NavItem to="/tasks" icon={FileText} label="Task Inbox" />
+                        <NavItem to="/view-only-memos" icon={Eye} label="View-Only Memos" />
                         <div className="my-4 border-b border-border/50" />
                         <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             Settings
@@ -87,7 +81,11 @@ export default function Layout() {
                         <div className="px-2 text-sm text-muted-foreground">Guest User</div>
                     )}
 
-                    <Button variant="ghost" className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10">
+                    <Button
+                        variant="ghost"
+                        className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={logout}
+                    >
                         <LogOut className="mr-2 h-4 w-4" />
                         Logout
                     </Button>

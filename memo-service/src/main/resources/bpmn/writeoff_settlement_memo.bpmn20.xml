@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:flowable="http://flowable.org/bpmn"
+                  id="Definitions_WOSM"
+                  targetNamespace="http://memo.enterprise.com/bpmn">
+  <bpmn:process id="writeoff_settlement_memo" name="Write-off Settlement Memo Workflow" isExecutable="true">
+    
+    <bpmn:startEvent id="start" name="Write-off Request">
+      <bpmn:outgoing>flow_to_rm</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <bpmn:userTask id="rm_documentation" name="RM Documentation" flowable:candidateGroups="ROLE_RELATIONSHIP_MANAGER">
+      <bpmn:documentation>{"strategy":"ROLE","role":"RELATIONSHIP_MANAGER","scope":"ORIGINATING_BRANCH","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_rm</bpmn:incoming>
+      <bpmn:outgoing>flow_to_bm</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="branch_manager_review" name="Branch Manager Review" flowable:candidateGroups="ROLE_BRANCH_MANAGER">
+      <bpmn:documentation>{"strategy":"ROLE","role":"BRANCH_MANAGER","scope":"ORIGINATING_BRANCH","conditions":[],"escalationLevels":[{"duration":"P2D","role":"DISTRICT_HEAD","scope":"DISTRICT"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_bm</bpmn:incoming>
+      <bpmn:outgoing>flow_to_recovery</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="recovery_review" name="Recovery Department Review" flowable:candidateGroups="ROLE_RECOVERY">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"RECOVERY","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_recovery</bpmn:incoming>
+      <bpmn:outgoing>flow_to_legal</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="legal_opinion" name="Legal Opinion" flowable:candidateGroups="ROLE_LEGAL">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"LEGAL","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_legal</bpmn:incoming>
+      <bpmn:outgoing>flow_to_cfo</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="cfo_review" name="CFO Financial Review" flowable:candidateGroups="ROLE_CFO">
+      <bpmn:documentation>{"strategy":"ROLE","role":"CFO","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P3D","role":"CEO","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_cfo</bpmn:incoming>
+      <bpmn:outgoing>flow_to_committee</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="board_approval" name="Board/Committee Approval" flowable:candidateGroups="COMMITTEE_BOARD">
+      <bpmn:documentation>{"strategy":"COMMITTEE","committeeCode":"BOARD","decisionRule":"MAJORITY","requiredApprovals":4,"totalMembers":7,"scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_committee</bpmn:incoming>
+      <bpmn:outgoing>flow_to_end</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:endEvent id="end" name="Write-off Approved">
+      <bpmn:incoming>flow_to_end</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <bpmn:sequenceFlow id="flow_to_rm" sourceRef="start" targetRef="rm_documentation" />
+    <bpmn:sequenceFlow id="flow_to_bm" sourceRef="rm_documentation" targetRef="branch_manager_review" />
+    <bpmn:sequenceFlow id="flow_to_recovery" sourceRef="branch_manager_review" targetRef="recovery_review" />
+    <bpmn:sequenceFlow id="flow_to_legal" sourceRef="recovery_review" targetRef="legal_opinion" />
+    <bpmn:sequenceFlow id="flow_to_cfo" sourceRef="legal_opinion" targetRef="cfo_review" />
+    <bpmn:sequenceFlow id="flow_to_committee" sourceRef="cfo_review" targetRef="board_approval" />
+    <bpmn:sequenceFlow id="flow_to_end" sourceRef="board_approval" targetRef="end" />
+  </bpmn:process>
+  
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="writeoff_settlement_memo">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="rm_documentation_di" bpmnElement="rm_documentation">
+        <dc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branch_manager_review_di" bpmnElement="branch_manager_review">
+        <dc:Bounds x="390" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="recovery_review_di" bpmnElement="recovery_review">
+        <dc:Bounds x="540" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="legal_opinion_di" bpmnElement="legal_opinion">
+        <dc:Bounds x="690" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cfo_review_di" bpmnElement="cfo_review">
+        <dc:Bounds x="840" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="board_approval_di" bpmnElement="board_approval">
+        <dc:Bounds x="990" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="1142" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="flow_to_rm_di" bpmnElement="flow_to_rm">
+        <di:waypoint x="188" y="120" /><di:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_bm_di" bpmnElement="flow_to_bm">
+        <di:waypoint x="340" y="120" /><di:waypoint x="390" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_recovery_di" bpmnElement="flow_to_recovery">
+        <di:waypoint x="490" y="120" /><di:waypoint x="540" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_legal_di" bpmnElement="flow_to_legal">
+        <di:waypoint x="640" y="120" /><di:waypoint x="690" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_cfo_di" bpmnElement="flow_to_cfo">
+        <di:waypoint x="790" y="120" /><di:waypoint x="840" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_committee_di" bpmnElement="flow_to_committee">
+        <di:waypoint x="940" y="120" /><di:waypoint x="990" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_end_di" bpmnElement="flow_to_end">
+        <di:waypoint x="1090" y="120" /><di:waypoint x="1142" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

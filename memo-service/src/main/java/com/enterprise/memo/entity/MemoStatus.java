@@ -6,5 +6,6 @@ public enum MemoStatus {
     IN_REVIEW,
     APPROVED,
     REJECTED,
+    SENT_BACK,
     CANCELLED
 }

@@ -1,0 +1,175 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: gateway-product
+
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        service-name: ${spring.application.name}
+        health-check-path: /actuator/health
+        health-check-interval: 15s
+
+    # Spring Cloud Gateway Configuration
+    gateway:
+      server:
+        webflux:
+          enabled: true
+      
+        # filters are handled in RouteConfig.java
+          # routes:
+          # # Auth Routes
+          # - id: auth-login
+          #   uri: http://localhost:9000
+          #   predicates:
+          #     - Path=/auth/login
+          #     - Method=POST
+          #   filters:
+          #     - name: CookiePropagation
+
+          # - id: auth-session
+          #   uri: http://localhost:9000
+          #   predicates:
+          #     - Path=/auth/session
+          #     - Method=GET
+          #   filters:
+          #     - name: CookiePropagation
+
+          # - id: auth-token-for-product
+          #   uri: http://localhost:9000
+          #   predicates:
+          #     - Path=/auth/token-for-product
+          #     - Method=POST
+          #   filters:
+          #     - name: CookiePropagation
+
+          # - id: auth-logout-global
+          #   uri: http://localhost:9000
+          #   predicates:
+          #     - Path=/auth/logout/global
+          #     - Method=POST
+          #   filters:
+          #     - name: CookiePropagation
+
+          # # --- MMS (Memo) Routes ---
+          # - id: memo-service-memos
+          #   uri: http://localhost:9008
+          #   predicates:
+          #     - Path=/memos/**
+          #   filters:
+          #     - name: JwtAuthentication
+
+          # - id: memo-service-config
+          #   uri: http://localhost:9008
+          #   predicates:
+          #     - Path=/memo-config/**
+          #   filters:
+          #     - name: JwtAuthentication
+
+          # # --- LMS Routes ---
+          # - id: lms-loan-products
+          #   uri: http://localhost:9005
+          #   predicates:
+          #     - Path=/lms/api/loan-products/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - name: ScopeEnforcement
+          #     - RewritePath=/lms(?<segment>/?.*), ${segment}
+
+          # - id: lms-loan-applications
+          #   uri: http://localhost:9005
+          #   predicates:
+          #     - Path=/lms/api/loan-applications/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - name: ScopeEnforcement
+          #     - RewritePath=/lms(?<segment>/?.*), ${segment}
+
+          # - id: lms-persons
+          #   uri: http://localhost:9007
+          #   predicates:
+          #     - Path=/lms/api/persons/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - RewritePath=/lms/api/persons(?<segment>/?.*), /api/persons${segment}
+
+          # # --- Workflow Routes ---
+          # - id: workflow-tasks
+          #   uri: http://localhost:9002
+          #   predicates:
+          #     - Path=/workflow/api/tasks/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - RewritePath=/workflow(?<segment>/?.*), ${segment}
+
+          # - id: workflow-processes
+          #   uri: http://localhost:9002
+          #   predicates:
+          #     - Path=/workflow/api/processes/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - RewritePath=/workflow(?<segment>/?.*), ${segment}
+              
+          # - id: workflow-process-templates
+          #   uri: http://localhost:9002
+          #   predicates:
+          #     - Path=/workflow/api/process-templates/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - RewritePath=/workflow(?<segment>/?.*), ${segment}
+
+          # # --- Form Service Routes ---
+          # # MMS uses /memo/api/forms -> /api/forms
+          # - id: mms-form-service
+          #   uri: http://localhost:9006
+          #   predicates:
+          #     - Path=/memo/api/forms/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - RewritePath=/memo/api/forms(?<segment>/?.*), /api/forms${segment}
+
+          # # LMS uses /lms/api/forms -> /api/forms
+          # - id: lms-form-service
+          #   uri: http://localhost:9006
+          #   predicates:
+          #     - Path=/lms/api/forms/**
+          #   filters:
+          #     - name: JwtAuthentication
+          #     - RewritePath=/lms/api/forms(?<segment>/?.*), /api/forms${segment}
+      
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    gateway:
+      enabled: true
+
+# Gateway Configuration
+gateway:
+  product-codes: [LMS, MMS]
+  
+  jwt:
+    jwks-uri: http://localhost:9000/.well-known/jwks.json
+    issuer: http://localhost:9000
+    
+  rate-limit:
+    enabled: true
+    default-limit: 100
+    window-seconds: 60
+
+logging:
+  level:
+    com.lms.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO

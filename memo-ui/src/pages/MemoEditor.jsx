@@ -8,13 +8,19 @@ import { Badge } from '../components/ui/badge';
 import { Save, Send, ArrowLeft, FileIcon, Download, Loader2 } from 'lucide-react';
 import FileUploader from '../components/FileUploader';
 import { toast } from 'sonner';
+import Form from '@rjsf/core';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import validator from '@rjsf/validator-ajv8';
 
 export default function MemoEditor() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [memo, setMemo] = useState(null);
+    const [topic, setTopic] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
     const [attachments, setAttachments] = useState([]);
 
     useEffect(() => {
@@ -26,6 +32,15 @@ export default function MemoEditor() {
         try {
             const data = await MemoApi.getMemo(id);
             setMemo(data);
+            // Load topic to get formSchema
+            if (data.topicId) {
+                try {
+                    const topicData = await MemoApi.getTopic(data.topicId);
+                    setTopic(topicData);
+                } catch (e) {
+                    console.warn("Failed to load topic details", e);
+                }
+            }
         } catch (error) {
             console.error(error);
             toast.error("Failed to load memo");
@@ -61,7 +76,32 @@ export default function MemoEditor() {
         }
     };
 
+    const handleSubmit = () => {
+        setSubmitDialogOpen(true);
+    };
+
+    const confirmSubmit = async () => {
+        setSubmitDialogOpen(false);
+        setSubmitting(true);
+        try {
+            const result = await MemoApi.submitMemo(id);
+            setMemo(result);
+            toast.success("Memo submitted for approval!");
+        } catch (error) {
+            console.error(error);
+            toast.error(error.response?.data?.message || "Failed to submit memo");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleFormChange = ({ formData }) => {
+        setMemo({ ...memo, formData });
+    };
+
     if (loading || !memo) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+    const isEditable = memo.status === 'DRAFT' || memo.status === 'SENT_BACK';
 
     return (
         <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-in fade-in duration-300">
@@ -74,7 +114,7 @@ export default function MemoEditor() {
                     <div>
                         <div className="flex items-center gap-2">
                             <div className="font-mono text-xs text-muted-foreground uppercase tracking-wider">{memo.memoNumber}</div>
-                            <Badge variant={memo.status === 'APPROVED' ? 'success' : 'secondary'} className="text-[10px] px-1.5 py-0 h-5">
+                            <Badge variant={memo.status === 'APPROVED' ? 'success' : memo.status === 'REJECTED' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5 py-0 h-5">
                                 {memo.status}
                             </Badge>
                         </div>
@@ -82,29 +122,40 @@ export default function MemoEditor() {
                             type="text"
                             value={memo.subject}
                             onChange={(e) => setMemo({ ...memo, subject: e.target.value })}
-                            className="text-xl font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 w-[400px] placeholder:text-muted-foreground/50"
+                            disabled={!isEditable}
+                            className="text-xl font-bold bg-transparent border-none focus:outline-none focus:ring-0 p-0 w-[400px] placeholder:text-muted-foreground/50 disabled:opacity-70"
                             placeholder="Enter subject..."
                         />
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <select
-                        value={memo.priority}
-                        onChange={(e) => setMemo({ ...memo, priority: e.target.value })}
-                        className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                        <option value="NORMAL">Normal Priority</option>
-                        <option value="HIGH">High Priority</option>
-                        <option value="URGENT">Urgent Priority</option>
-                    </select>
-                    <div className="h-6 w-px bg-border mx-1" />
-                    <Button variant="outline" onClick={handleSave} disabled={saving} size="sm">
-                        {saving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
-                        Save
-                    </Button>
-                    <Button size="sm" onClick={() => toast.info('Submit workflow coming soon')}>
-                        <Send className="mr-2 h-3.5 w-3.5" /> Submit
-                    </Button>
+                    {isEditable && (
+                        <>
+                            <select
+                                value={memo.priority}
+                                onChange={(e) => setMemo({ ...memo, priority: e.target.value })}
+                                className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                                <option value="NORMAL">Normal Priority</option>
+                                <option value="HIGH">High Priority</option>
+                                <option value="URGENT">Urgent Priority</option>
+                            </select>
+                            <div className="h-6 w-px bg-border mx-1" />
+                            <Button type="button" variant="outline" onClick={handleSave} disabled={saving} size="sm">
+                                {saving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
+                                Save
+                            </Button>
+                            <Button type="button" size="sm" onClick={handleSubmit} disabled={submitting}>
+                                {submitting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
+                                Submit
+                            </Button>
+                        </>
+                    )}
+                    {!isEditable && (
+                        <div className="text-sm text-muted-foreground italic">
+                            This memo is {memo.status.toLowerCase()} and cannot be edited.
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -116,6 +167,7 @@ export default function MemoEditor() {
                             <RichTextEditor
                                 content={memo.content}
                                 onChange={(content) => setMemo({ ...memo, content })}
+                                editable={isEditable}
                             />
                         </CardContent>
                     </Card>
@@ -125,7 +177,7 @@ export default function MemoEditor() {
                         <CardHeader className="pb-3 border-b">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-base font-medium">Attachments</CardTitle>
-                                <FileUploader memoId={id} onUploadComplete={loadAttachments} />
+                                {isEditable && <FileUploader memoId={id} onUploadComplete={loadAttachments} />}
                             </div>
                         </CardHeader>
                         <CardContent className="pt-4">
@@ -160,7 +212,7 @@ export default function MemoEditor() {
                     </Card>
                 </div>
 
-                {/* Sidebar (Details & Forms) */}
+                {/* Sidebar (Details & Dynamic Forms) */}
                 <div className="lg:col-span-4 space-y-6">
                     <Card>
                         <CardHeader className="pb-3 border-b bg-muted/20">
@@ -186,16 +238,60 @@ export default function MemoEditor() {
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader className="pb-3 border-b bg-muted/20">
-                            <CardTitle className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Additional Data</CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-4 text-sm text-muted-foreground">
-                            <p>Dynamic form fields will appear here based on the selected topic.</p>
-                        </CardContent>
-                    </Card>
+                    {/* Dynamic Form from Topic's formSchema */}
+                    {topic?.formSchema && (
+                        <Card>
+                            <CardHeader className="pb-3 border-b bg-muted/20">
+                                <CardTitle className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                                    {topic.formSchema.title || 'Additional Details'}
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-4">
+                                <Form
+                                    schema={topic.formSchema}
+                                    formData={memo.formData || {}}
+                                    onChange={handleFormChange}
+                                    validator={validator}
+                                    disabled={!isEditable}
+                                    uiSchema={{
+                                        "ui:submitButtonOptions": { norender: true }
+                                    }}
+                                    className="rjsf-compact"
+                                />
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {!topic?.formSchema && (
+                        <Card>
+                            <CardHeader className="pb-3 border-b bg-muted/20">
+                                <CardTitle className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Additional Data</CardTitle>
+                            </CardHeader>
+                            <CardContent className="pt-4 text-sm text-muted-foreground">
+                                <p>No dynamic form configured for this topic.</p>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
             </div>
+
+            <Dialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Submit Memo</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to submit this memo for approval? Once submitted, you cannot edit it until it is returned.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setSubmitDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={confirmSubmit} disabled={submitting}>
+                            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Confirm Submit
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

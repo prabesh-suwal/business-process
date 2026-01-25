@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MemoApi } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 
 export default function Login() {
     const navigate = useNavigate();
+    const { login } = useAuth();
     const [loading, setLoading] = useState(false);
     const [credentials, setCredentials] = useState({ username: '', password: '' });
 
@@ -17,10 +18,7 @@ export default function Login() {
         e.preventDefault();
         setLoading(true);
         try {
-            // Check if we need to implement direct CAS login or if we are simulating
-            // For CAS, typically we might post to /cas/v1/tickets or simpler form login
-            // Assuming Gateway proxies /auth/login to CAS form login
-            await MemoApi.login(credentials.username, credentials.password);
+            await login(credentials.username, credentials.password);
             toast.success("Login successful");
             navigate('/');
         } catch (error) {

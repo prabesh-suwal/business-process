@@ -13,8 +13,8 @@ import java.util.UUID;
 @Builder
 public class StartProcessRequest {
 
-    @NotNull(message = "Process Template ID is required")
-    private UUID processTemplateId;
+    @NotBlank(message = "Process Template ID is required")
+    private String processTemplateId; // Flowable process definition ID
 
     private String businessKey;
 

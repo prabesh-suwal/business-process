@@ -37,7 +37,7 @@ public class ProcessInstanceMetadata {
     @JoinColumn(name = "process_template_id")
     private ProcessTemplate processTemplate;
 
-    @Column(name = "product_id", nullable = false)
+    @Column(name = "product_id")
     private UUID productId;
 
     @Column(name = "business_key")

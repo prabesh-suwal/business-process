@@ -22,12 +22,11 @@
     <modules>
         <module>../cas-common</module>
         <module>../cas-server</module>
-        <module>../lms-gateway</module>
+        <module>../gateway-product</module>
         <module>../wfm-gateway</module>
         <module>../workflow-service</module>
         <module>../form-service</module>
         <module>../memo-service</module>
-        <module>../memo-gateway</module>
     </modules>
 
     <properties>

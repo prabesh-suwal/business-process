@@ -27,163 +27,216 @@ import java.util.UUID;
 @Transactional
 public class ProcessRuntimeService {
 
-    private final ProcessTemplateRepository processTemplateRepository;
-    private final ProcessInstanceMetadataRepository processInstanceMetadataRepository;
-    private final ActionTimelineRepository actionTimelineRepository;
-    private final RuntimeService runtimeService;
+        private final ProcessTemplateRepository processTemplateRepository;
+        private final ProcessInstanceMetadataRepository processInstanceMetadataRepository;
+        private final ActionTimelineRepository actionTimelineRepository;
+        private final RuntimeService runtimeService;
+        private final WorkflowVariableService workflowVariableService;
 
-    /**
-     * Start a new process instance from a process template.
-     */
-    public ProcessInstanceDTO startProcess(StartProcessRequest request, UUID startedBy, String startedByName) {
-        ProcessTemplate template = processTemplateRepository.findById(request.getProcessTemplateId())
-                .orElseThrow(
-                        () -> new IllegalArgumentException("Template not found: " + request.getProcessTemplateId()));
+        /**
+         * Start a new process instance from a process template.
+         * The processTemplateId can be either:
+         * - A UUID (our internal ProcessTemplate ID)
+         * - A Flowable process definition ID (e.g., "process_key:1:12345")
+         */
+        public ProcessInstanceDTO startProcess(StartProcessRequest request, UUID startedBy, String startedByName) {
+                String processTemplateId = request.getProcessTemplateId();
+                ProcessTemplate template = null;
+                String flowableProcessDefKey = null;
 
-        if (template.getStatus() != ProcessTemplate.ProcessTemplateStatus.ACTIVE) {
-            throw new IllegalStateException(
-                    "Cannot start process from non-ACTIVE template. Status: " + template.getStatus());
+                // Check if it's a Flowable process definition ID (contains colon)
+                if (processTemplateId.contains(":")) {
+                        // It's a direct Flowable process definition ID
+                        flowableProcessDefKey = processTemplateId;
+                        log.info("Starting process directly by definition ID: {}", flowableProcessDefKey);
+                } else {
+                        // Try to parse as UUID and look up ProcessTemplate
+                        try {
+                                UUID templateUuid = UUID.fromString(processTemplateId);
+                                template = processTemplateRepository.findById(templateUuid)
+                                                .orElseThrow(
+                                                                () -> new IllegalArgumentException(
+                                                                                "Template not found: "
+                                                                                                + processTemplateId));
+
+                                if (template.getStatus() != ProcessTemplate.ProcessTemplateStatus.ACTIVE) {
+                                        throw new IllegalStateException(
+                                                        "Cannot start process from non-ACTIVE template. Status: "
+                                                                        + template.getStatus());
+                                }
+
+                                if (template.getFlowableProcessDefKey() == null) {
+                                        throw new IllegalStateException("Template has not been deployed to Flowable");
+                                }
+                                flowableProcessDefKey = template.getFlowableProcessDefKey();
+                        } catch (IllegalArgumentException e) {
+                                // Not a valid UUID, treat as Flowable process key
+                                flowableProcessDefKey = processTemplateId;
+                                log.info("Starting process by process key: {}", flowableProcessDefKey);
+                        }
+                }
+
+                // Fetch Global Workflow Variables (Config)
+                Map<String, Object> finalVariables = new java.util.HashMap<>(
+                                workflowVariableService.getGlobalVariables());
+
+                // Merge with request variables (Request overrides Global)
+                if (request.getVariables() != null) {
+                        finalVariables.putAll(request.getVariables());
+                }
+
+                // Start Flowable process instance
+                ProcessInstance processInstance;
+                if (flowableProcessDefKey.contains(":")) {
+                        // Start by process definition ID
+                        processInstance = runtimeService.startProcessInstanceById(
+                                        flowableProcessDefKey,
+                                        request.getBusinessKey(),
+                                        finalVariables);
+                } else {
+                        // Start by process key
+                        processInstance = runtimeService.startProcessInstanceByKey(
+                                        flowableProcessDefKey,
+                                        request.getBusinessKey(),
+                                        finalVariables);
+                }
+
+                // Create our metadata record
+                ProcessInstanceMetadata metadata = ProcessInstanceMetadata.builder()
+                                .flowableProcessInstanceId(processInstance.getId())
+                                .processTemplate(template) // May be null for direct deployments
+                                .productId(template != null ? template.getProductId() : null)
+                                .businessKey(request.getBusinessKey())
+                                .title(request.getTitle())
+                                .startedBy(startedBy)
+                                .startedByName(startedByName)
+                                .status(ProcessInstanceMetadata.ProcessInstanceStatus.RUNNING)
+                                .build();
+
+                metadata = processInstanceMetadataRepository.save(metadata);
+
+                // Record in timeline
+                ActionTimeline timelineEvent = ActionTimeline.builder()
+                                .processInstanceId(processInstance.getId())
+                                .actionType(ActionTimeline.ActionType.PROCESS_STARTED)
+                                .actorId(startedBy)
+                                .actorName(startedByName)
+                                .metadata(Map.of(
+                                                "templateId",
+                                                template != null ? template.getId().toString() : processTemplateId,
+                                                "templateName",
+                                                template != null ? template.getName() : "Direct Deployment",
+                                                "businessKey",
+                                                request.getBusinessKey() != null ? request.getBusinessKey() : ""))
+                                .build();
+                actionTimelineRepository.save(timelineEvent);
+
+                log.info("Started process instance {} for {} by user {}",
+                                processInstance.getId(),
+                                template != null ? template.getName() : flowableProcessDefKey,
+                                startedByName);
+
+                return toDTO(metadata, template);
         }
 
-        if (template.getFlowableProcessDefKey() == null) {
-            throw new IllegalStateException("Template has not been deployed to Flowable");
+        /**
+         * Get process instance by Flowable ID.
+         */
+        @Transactional(readOnly = true)
+        public ProcessInstanceDTO getProcessInstance(String flowableProcessInstanceId) {
+                ProcessInstanceMetadata metadata = processInstanceMetadataRepository
+                                .findByFlowableProcessInstanceId(flowableProcessInstanceId)
+                                .orElseThrow(
+                                                () -> new IllegalArgumentException("Process instance not found: "
+                                                                + flowableProcessInstanceId));
+
+                return toDTO(metadata, metadata.getProcessTemplate());
         }
 
-        // Start Flowable process instance
-        ProcessInstance processInstance = runtimeService.startProcessInstanceByKey(
-                template.getFlowableProcessDefKey(),
-                request.getBusinessKey(),
-                request.getVariables() != null ? request.getVariables() : Map.of());
+        /**
+         * Get process instances by product.
+         */
+        @Transactional(readOnly = true)
+        public Page<ProcessInstanceDTO> getProcessInstancesByProduct(UUID productId, Pageable pageable) {
+                return processInstanceMetadataRepository
+                                .findByProductIdOrderByStartedAtDesc(productId, pageable)
+                                .map(m -> toDTO(m, m.getProcessTemplate()));
+        }
 
-        // Create our metadata record
-        ProcessInstanceMetadata metadata = ProcessInstanceMetadata.builder()
-                .flowableProcessInstanceId(processInstance.getId())
-                .processTemplate(template)
-                .productId(template.getProductId())
-                .businessKey(request.getBusinessKey())
-                .title(request.getTitle())
-                .startedBy(startedBy)
-                .startedByName(startedByName)
-                .status(ProcessInstanceMetadata.ProcessInstanceStatus.RUNNING)
-                .build();
+        /**
+         * Get process instances started by a user.
+         */
+        @Transactional(readOnly = true)
+        public Page<ProcessInstanceDTO> getProcessInstancesByUser(UUID userId, Pageable pageable) {
+                return processInstanceMetadataRepository
+                                .findByStartedByOrderByStartedAtDesc(userId, pageable)
+                                .map(m -> toDTO(m, m.getProcessTemplate()));
+        }
 
-        metadata = processInstanceMetadataRepository.save(metadata);
+        /**
+         * Cancel a running process instance.
+         */
+        public void cancelProcess(String flowableProcessInstanceId, UUID cancelledBy, String cancelledByName,
+                        String reason) {
+                ProcessInstanceMetadata metadata = processInstanceMetadataRepository
+                                .findByFlowableProcessInstanceId(flowableProcessInstanceId)
+                                .orElseThrow(
+                                                () -> new IllegalArgumentException("Process instance not found: "
+                                                                + flowableProcessInstanceId));
 
-        // Record in timeline
-        ActionTimeline timelineEvent = ActionTimeline.builder()
-                .processInstanceId(processInstance.getId())
-                .actionType(ActionTimeline.ActionType.PROCESS_STARTED)
-                .actorId(startedBy)
-                .actorName(startedByName)
-                .metadata(Map.of(
-                        "templateId", template.getId().toString(),
-                        "templateName", template.getName(),
-                        "businessKey", request.getBusinessKey() != null ? request.getBusinessKey() : ""))
-                .build();
-        actionTimelineRepository.save(timelineEvent);
+                // Delete from Flowable
+                runtimeService.deleteProcessInstance(flowableProcessInstanceId, reason);
 
-        log.info("Started process instance {} for template {} by user {}",
-                processInstance.getId(), template.getName(), startedByName);
+                // Update our metadata
+                metadata.setStatus(ProcessInstanceMetadata.ProcessInstanceStatus.CANCELLED);
+                processInstanceMetadataRepository.save(metadata);
 
-        return toDTO(metadata, template);
-    }
+                // Record in timeline
+                ActionTimeline timelineEvent = ActionTimeline.builder()
+                                .processInstanceId(flowableProcessInstanceId)
+                                .actionType(ActionTimeline.ActionType.PROCESS_CANCELLED)
+                                .actorId(cancelledBy)
+                                .actorName(cancelledByName)
+                                .metadata(Map.of("reason", reason != null ? reason : ""))
+                                .build();
+                actionTimelineRepository.save(timelineEvent);
 
-    /**
-     * Get process instance by Flowable ID.
-     */
-    @Transactional(readOnly = true)
-    public ProcessInstanceDTO getProcessInstance(String flowableProcessInstanceId) {
-        ProcessInstanceMetadata metadata = processInstanceMetadataRepository
-                .findByFlowableProcessInstanceId(flowableProcessInstanceId)
-                .orElseThrow(
-                        () -> new IllegalArgumentException("Process instance not found: " + flowableProcessInstanceId));
+                log.info("Cancelled process instance {} by user {}. Reason: {}",
+                                flowableProcessInstanceId, cancelledByName, reason);
+        }
 
-        return toDTO(metadata, metadata.getProcessTemplate());
-    }
+        /**
+         * Get variables for a process instance.
+         */
+        @Transactional(readOnly = true)
+        public Map<String, Object> getProcessVariables(String flowableProcessInstanceId) {
+                return runtimeService.getVariables(flowableProcessInstanceId);
+        }
 
-    /**
-     * Get process instances by product.
-     */
-    @Transactional(readOnly = true)
-    public Page<ProcessInstanceDTO> getProcessInstancesByProduct(UUID productId, Pageable pageable) {
-        return processInstanceMetadataRepository
-                .findByProductIdOrderByStartedAtDesc(productId, pageable)
-                .map(m -> toDTO(m, m.getProcessTemplate()));
-    }
+        /**
+         * Set a variable on a process instance.
+         */
+        public void setProcessVariable(String flowableProcessInstanceId, String variableName, Object value) {
+                runtimeService.setVariable(flowableProcessInstanceId, variableName, value);
+                log.debug("Set variable {} on process {}", variableName, flowableProcessInstanceId);
+        }
 
-    /**
-     * Get process instances started by a user.
-     */
-    @Transactional(readOnly = true)
-    public Page<ProcessInstanceDTO> getProcessInstancesByUser(UUID userId, Pageable pageable) {
-        return processInstanceMetadataRepository
-                .findByStartedByOrderByStartedAtDesc(userId, pageable)
-                .map(m -> toDTO(m, m.getProcessTemplate()));
-    }
-
-    /**
-     * Cancel a running process instance.
-     */
-    public void cancelProcess(String flowableProcessInstanceId, UUID cancelledBy, String cancelledByName,
-            String reason) {
-        ProcessInstanceMetadata metadata = processInstanceMetadataRepository
-                .findByFlowableProcessInstanceId(flowableProcessInstanceId)
-                .orElseThrow(
-                        () -> new IllegalArgumentException("Process instance not found: " + flowableProcessInstanceId));
-
-        // Delete from Flowable
-        runtimeService.deleteProcessInstance(flowableProcessInstanceId, reason);
-
-        // Update our metadata
-        metadata.setStatus(ProcessInstanceMetadata.ProcessInstanceStatus.CANCELLED);
-        processInstanceMetadataRepository.save(metadata);
-
-        // Record in timeline
-        ActionTimeline timelineEvent = ActionTimeline.builder()
-                .processInstanceId(flowableProcessInstanceId)
-                .actionType(ActionTimeline.ActionType.PROCESS_CANCELLED)
-                .actorId(cancelledBy)
-                .actorName(cancelledByName)
-                .metadata(Map.of("reason", reason != null ? reason : ""))
-                .build();
-        actionTimelineRepository.save(timelineEvent);
-
-        log.info("Cancelled process instance {} by user {}. Reason: {}",
-                flowableProcessInstanceId, cancelledByName, reason);
-    }
-
-    /**
-     * Get variables for a process instance.
-     */
-    @Transactional(readOnly = true)
-    public Map<String, Object> getProcessVariables(String flowableProcessInstanceId) {
-        return runtimeService.getVariables(flowableProcessInstanceId);
-    }
-
-    /**
-     * Set a variable on a process instance.
-     */
-    public void setProcessVariable(String flowableProcessInstanceId, String variableName, Object value) {
-        runtimeService.setVariable(flowableProcessInstanceId, variableName, value);
-        log.debug("Set variable {} on process {}", variableName, flowableProcessInstanceId);
-    }
-
-    private ProcessInstanceDTO toDTO(ProcessInstanceMetadata metadata, ProcessTemplate template) {
-        return ProcessInstanceDTO.builder()
-                .id(metadata.getId())
-                .flowableProcessInstanceId(metadata.getFlowableProcessInstanceId())
-                .processTemplateId(template != null ? template.getId() : null)
-                .processTemplateName(template != null ? template.getName() : null)
-                .productId(metadata.getProductId())
-                .businessKey(metadata.getBusinessKey())
-                .title(metadata.getTitle())
-                .startedBy(metadata.getStartedBy())
-                .startedByName(metadata.getStartedByName())
-                .startedAt(metadata.getStartedAt())
-                .completedAt(metadata.getCompletedAt())
-                .status(metadata.getStatus())
-                .priority(metadata.getPriority())
-                .dueDate(metadata.getDueDate())
-                .build();
-    }
+        private ProcessInstanceDTO toDTO(ProcessInstanceMetadata metadata, ProcessTemplate template) {
+                return ProcessInstanceDTO.builder()
+                                .id(metadata.getId())
+                                .flowableProcessInstanceId(metadata.getFlowableProcessInstanceId())
+                                .processTemplateId(template != null ? template.getId() : null)
+                                .processTemplateName(template != null ? template.getName() : null)
+                                .productId(metadata.getProductId())
+                                .businessKey(metadata.getBusinessKey())
+                                .title(metadata.getTitle())
+                                .startedBy(metadata.getStartedBy())
+                                .startedByName(metadata.getStartedByName())
+                                .startedAt(metadata.getStartedAt())
+                                .completedAt(metadata.getCompletedAt())
+                                .status(metadata.getStatus())
+                                .priority(metadata.getPriority())
+                                .dueDate(metadata.getDueDate())
+                                .build();
+        }
 }

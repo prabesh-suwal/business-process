@@ -100,4 +100,49 @@ public class UserAdminController {
         adminService.removeRole(userId, userRoleId);
         return ResponseEntity.noContent().build();
     }
+
+    // ==================== AUTHORITY-BASED USER QUERY ====================
+
+    /**
+     * Find users who have a specific role with approval authority >= the required
+     * amount.
+     * Used by workflow-service for authority-based task routing.
+     * 
+     * Example: GET
+     * /admin/users/by-authority?roleName=APPROVER&requiredAmount=5000000&branchId=BR001
+     */
+    @GetMapping("/by-authority")
+    public ResponseEntity<List<UserDto>> findUsersByAuthority(
+            @RequestParam String roleName,
+            @RequestParam Long requiredAmount,
+            @RequestParam(required = false) String branchId,
+            @RequestParam(required = false) String regionId,
+            @RequestParam(required = false, defaultValue = "ALL") String selection) {
+
+        List<UserDto> users;
+
+        switch (selection.toUpperCase()) {
+            case "LOWEST_MATCH":
+                // Return only the user with lowest matching authority
+                users = adminService.findUserWithLowestMatchingAuthority(
+                        roleName, requiredAmount, branchId, regionId)
+                        .map(List::of)
+                        .orElse(List.of());
+                break;
+            case "HIGHEST":
+                // Return only the user with highest authority (ignores requiredAmount)
+                users = adminService.findUserWithHighestAuthority(roleName, branchId, regionId)
+                        .map(List::of)
+                        .orElse(List.of());
+                break;
+            case "ALL":
+            default:
+                // Return all matching users
+                users = adminService.findUsersWithApprovalAuthority(
+                        roleName, requiredAmount, branchId, regionId);
+                break;
+        }
+
+        return ResponseEntity.ok(users);
+    }
 }

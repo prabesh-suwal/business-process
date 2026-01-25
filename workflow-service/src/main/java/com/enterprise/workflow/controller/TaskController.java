@@ -27,7 +27,7 @@ public class TaskController {
      */
     @GetMapping("/assigned")
     public ResponseEntity<List<TaskDTO>> getAssignedTasks(
-            @RequestHeader(value = "X-User-Id") String userId) {
+            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
 
         return ResponseEntity.ok(taskService.getAssignedTasks(userId));
     }
@@ -38,7 +38,7 @@ public class TaskController {
      */
     @GetMapping("/my")
     public ResponseEntity<List<TaskDTO>> getMyTasks(
-            @RequestHeader(value = "X-User-Id") String userId) {
+            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
 
         return ResponseEntity.ok(taskService.getAssignedTasks(userId));
     }
@@ -63,7 +63,7 @@ public class TaskController {
      */
     @GetMapping("/inbox")
     public ResponseEntity<List<TaskDTO>> getInbox(
-            @RequestHeader(value = "X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
             @RequestHeader(value = "X-User-Roles", required = false) String roles) {
 
         List<TaskDTO> assigned = taskService.getAssignedTasks(userId);
@@ -172,5 +172,46 @@ public class TaskController {
 
         taskService.setTaskPriority(id, priority);
         return ResponseEntity.ok().build();
+    }
+
+    // ==================== COMMITTEE VOTING ====================
+
+    private final com.enterprise.workflow.service.CommitteeVotingService committeeVotingService;
+
+    /**
+     * Cast a vote on a committee task.
+     */
+    @PostMapping("/{id}/vote")
+    public ResponseEntity<CommitteeVoteDTO> castVote(
+            @PathVariable String id,
+            @RequestBody VoteRequest request,
+            @RequestHeader(value = "X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+
+        CommitteeVoteDTO result = committeeVotingService.castVote(
+                id,
+                userId,
+                userName != null ? userName : "Unknown",
+                request.getDecision(),
+                request.getComment());
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Get voting status for a committee task.
+     */
+    @GetMapping("/{id}/vote-status")
+    public ResponseEntity<CommitteeVoteDTO> getVoteStatus(@PathVariable String id) {
+        return ResponseEntity.ok(committeeVotingService.getVoteStatus(id));
+    }
+
+    /**
+     * Vote request DTO.
+     */
+    @lombok.Data
+    public static class VoteRequest {
+        private String decision; // APPROVE, REJECT, ABSTAIN
+        private String comment;
     }
 }

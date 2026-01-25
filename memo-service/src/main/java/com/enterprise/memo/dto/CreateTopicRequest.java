@@ -24,7 +24,7 @@ public class CreateTopicRequest {
     private String name; // e.g. "Capital Expense Request"
     private String description;
 
-    private UUID workflowTemplateId;
+    private String workflowTemplateId;
     private UUID formDefinitionId;
 
     private Map<String, Object> contentTemplate; // Rich Text JSON

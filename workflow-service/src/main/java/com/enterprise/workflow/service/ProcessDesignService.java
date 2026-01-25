@@ -129,6 +129,45 @@ public class ProcessDesignService {
         }
 
         /**
+         * Deploy raw BPMN XML directly to Flowable engine.
+         * This bypasses template management and is used for topic-specific workflows.
+         * Returns the Flowable process definition ID.
+         */
+        public String deployRawBpmn(String processKey, String processName, String bpmnXml) {
+                if (bpmnXml == null || bpmnXml.isBlank()) {
+                        throw new IllegalArgumentException("BPMN XML is required");
+                }
+
+                // Normalize the process key
+                String normalizedKey = processKey.toLowerCase()
+                                .replaceAll("[^a-z0-9]", "_")
+                                .replaceAll("_+", "_")
+                                .replaceAll("^_|_$", "");
+
+                log.info("Deploying raw BPMN for process: {} (key: {})", processName, normalizedKey);
+
+                // Deploy to Flowable
+                Deployment deployment = repositoryService.createDeployment()
+                                .name(processName != null ? processName : normalizedKey)
+                                .addInputStream(
+                                                normalizedKey + ".bpmn20.xml",
+                                                new ByteArrayInputStream(bpmnXml.getBytes(StandardCharsets.UTF_8)))
+                                .deploy();
+
+                // Get the deployed process definition
+                ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
+                                .deploymentId(deployment.getId())
+                                .singleResult();
+
+                log.info("Deployed raw BPMN successfully. Deployment ID: {}, Process Definition: {} ({})",
+                                deployment.getId(), processDefinition.getKey(), processDefinition.getId());
+
+                // Return the process definition ID (this is what memo-service needs to start
+                // instances)
+                return processDefinition.getId();
+        }
+
+        /**
          * Get a process template by ID.
          */
         @Transactional(readOnly = true)
@@ -170,6 +209,16 @@ public class ProcessDesignService {
                 return processTemplateRepository
                                 .findByStatusOrderByNameAsc(ProcessTemplate.ProcessTemplateStatus.ACTIVE)
                                 .stream()
+                                .map(this::toDTO)
+                                .toList();
+        }
+
+        /**
+         * Get ALL process templates across all products (including DRAFTS).
+         */
+        @Transactional(readOnly = true)
+        public List<ProcessTemplateDTO> getAllTemplates() {
+                return processTemplateRepository.findAll().stream()
                                 .map(this::toDTO)
                                 .toList();
         }

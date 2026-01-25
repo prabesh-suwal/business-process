@@ -57,8 +57,11 @@ public class ProcessTemplateController {
                     ? processDesignService.getActiveTemplatesByProduct(productId)
                     : processDesignService.getTemplatesByProduct(productId);
         } else {
-            // Return all active templates when no productId specified
-            templates = processDesignService.getAllActiveTemplates();
+            // Return all templates (optionally filtered by active status) when no productId
+            // specified
+            templates = activeOnly
+                    ? processDesignService.getAllActiveTemplates()
+                    : processDesignService.getAllTemplates();
         }
 
         return ResponseEntity.ok(templates);
@@ -85,6 +88,33 @@ public class ProcessTemplateController {
 
         UUID deployedBy = userId != null ? UUID.fromString(userId) : null;
         return ResponseEntity.ok(processDesignService.deployTemplate(id, deployedBy));
+    }
+
+    /**
+     * Deploy raw BPMN XML directly to Flowable.
+     * Used by memo-service to deploy topic workflows without going through template
+     * management.
+     * Returns the Flowable process definition ID.
+     */
+    @PostMapping("/deploy-bpmn")
+    public ResponseEntity<java.util.Map<String, Object>> deployBpmn(
+            @RequestBody java.util.Map<String, String> request,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+
+        String processKey = request.get("processKey");
+        String processName = request.get("processName");
+        String bpmnXml = request.get("bpmnXml");
+
+        if (processKey == null || bpmnXml == null) {
+            return ResponseEntity.badRequest().body(java.util.Map.of(
+                    "error", "processKey and bpmnXml are required"));
+        }
+
+        String processDefinitionId = processDesignService.deployRawBpmn(processKey, processName, bpmnXml);
+
+        return ResponseEntity.ok(java.util.Map.of(
+                "processDefinitionId", processDefinitionId,
+                "message", "Workflow deployed successfully"));
     }
 
     /**

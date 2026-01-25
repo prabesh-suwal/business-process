@@ -53,7 +53,7 @@
                     <flowable:string><![CDATA[PUT]]></flowable:string>
                 </flowable:field>
                 <flowable:field name="requestUrl">
-                    <flowable:expression><![CDATA[http://memo-service:9008/api/memos/${memoId}/status?status=APPROVED]]></flowable:expression>
+                    <flowable:expression><![CDATA[http://localhost:9008/api/memos/${memoId}/status?status=APPROVED]]></flowable:expression>
                 </flowable:field>
             </extensionElements>
         </serviceTask>
@@ -64,7 +64,7 @@
                     <flowable:string><![CDATA[PUT]]></flowable:string>
                 </flowable:field>
                 <flowable:field name="requestUrl">
-                    <flowable:expression><![CDATA[http://memo-service:9008/api/memos/${memoId}/status?status=REJECTED]]></flowable:expression>
+                    <flowable:expression><![CDATA[http://localhost:9008/api/memos/${memoId}/status?status=REJECTED]]></flowable:expression>
                 </flowable:field>
             </extensionElements>
         </serviceTask>

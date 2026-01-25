@@ -66,6 +66,6 @@ public class UserRole {
     }
 
     public Number getMaxApprovalAmount() {
-        return constraints != null ? (Number) constraints.get("maxApprovalAmount") : null;
+        return constraints != null ? (Number) constraints.get("maxApprovalAmount") : Long.MIN_VALUE;
     }
 }

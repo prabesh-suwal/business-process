@@ -6,10 +6,10 @@ import com.enterprise.memo.dto.UpdateMemoRequest;
 import com.enterprise.memo.entity.Memo;
 import com.enterprise.memo.entity.MemoStatus;
 import com.enterprise.memo.entity.MemoTopic;
-import com.enterprise.memo.repository.MemoCategoryRepository;
 import com.enterprise.memo.repository.MemoRepository;
 import com.enterprise.memo.repository.MemoTopicRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,20 +17,16 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.reactive.function.client.WebClient;
-
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MemoService {
 
     private final MemoRepository memoRepository;
     private final MemoTopicRepository topicRepository;
     private final MemoNumberingService numberingService;
-    private final WebClient.Builder webClientBuilder;
-
-    @Value("${services.workflow-service.url}")
-    private String workflowServiceUrl;
+    private final com.enterprise.memo.client.WorkflowClient workflowClient;
+    private final ViewerService viewerService;
 
     // Mapper could be MapStruct, but implementing manual for now to save
     // time/complexity
@@ -125,41 +121,70 @@ public class MemoService {
         Memo memo = memoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Memo not found"));
 
-        if (memo.getStatus() != MemoStatus.DRAFT) {
-            throw new RuntimeException("Only DRAFT memos can be submitted");
+        if (memo.getStatus() != MemoStatus.DRAFT && memo.getStatus() != MemoStatus.SENT_BACK) {
+            throw new RuntimeException("Only DRAFT or SENT_BACK memos can be submitted");
+        }
+
+        // Get topic to get workflowTemplateId
+        var topic = memo.getTopic();
+        if (topic == null || topic.getWorkflowTemplateId() == null) {
+            // For MVP, allow submission without workflow (just change status)
+            log.warn("No workflow configured for topic. Skipping workflow start.");
+            memo.setStatus(MemoStatus.SUBMITTED);
+            memo.setCurrentStage("Pending Review");
+            memo = memoRepository.save(memo);
+            return toDTO(memo);
         }
 
         // Start Workflow
         try {
-            java.util.Map<String, Object> variables = java.util.Map.of(
-                    "memoId", memo.getId().toString(),
-                    "memoNumber", memo.getMemoNumber(),
-                    "subject", memo.getSubject(),
-                    "manager", "admin" // Fixed manager for MVP
-            );
+            java.util.Map<String, Object> variables = new java.util.HashMap<>();
+            variables.put("memoId", memo.getId().toString());
+            variables.put("memoNumber", memo.getMemoNumber());
+            variables.put("subject", memo.getSubject());
+            variables.put("initiatorId", userId.toString());
 
-            java.util.Map<String, Object> request = java.util.Map.of(
-                    "processDefinitionKey", "memo_approval_process",
-                    "businessKey", memo.getId().toString(),
-                    "variables", variables);
+            // Inject Workflow Configuration Variables (Dynamic Properties)
+            // In a real system, these would be fetched from a DB configuration table or
+            // properties service
+            variables.put("approvalThreshold", 5000000L); // 50 Lakhs
+            variables.put("escalationDelayLow", "P1D");
+            variables.put("escalationDelayMedium", "P2D");
+            variables.put("escalationDelayHigh", "P3D");
 
-            java.util.Map response = webClientBuilder.build()
-                    .post()
-                    .uri(workflowServiceUrl + "/api/process-instances/start-by-key")
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToMono(java.util.Map.class)
-                    .block();
+            // Dynamic Role Assignments
+            variables.put("roleRM", "RELATIONSHIP_MANAGER");
+            variables.put("roleBM", "BRANCH_MANAGER");
+            variables.put("roleCreditAnalyst", "CREDIT_ANALYST");
+            variables.put("roleRiskOfficer", "RISK_OFFICER");
+            variables.put("roleApprover", "APPROVER");
+            variables.put("roleDistrictHead", "DISTRICT_HEAD");
+            variables.put("roleCreditCommitteeA", "CREDIT_COMMITTEE_A");
 
-            if (response != null && response.containsKey("id")) {
-                memo.setProcessInstanceId((String) response.get("id"));
+            // Committee Codes
+            variables.put("committeeCreditA", "CC_A");
+
+            // Add form data to variables if present
+            if (memo.getFormData() != null) {
+                variables.putAll(memo.getFormData());
             }
+
+            com.enterprise.memo.dto.StartProcessRequest request = com.enterprise.memo.dto.StartProcessRequest.builder()
+                    .processTemplateId(topic.getWorkflowTemplateId())
+                    .businessKey(memo.getId().toString())
+                    .title(memo.getMemoNumber() + " - " + memo.getSubject())
+                    .variables(variables)
+                    .build();
+
+            workflowClient.startProcess(request, userId);
+
         } catch (Exception e) {
+            log.error("Failed to start workflow for memo {}: {}", id, e.getMessage());
             throw new RuntimeException("Failed to start workflow: " + e.getMessage(), e);
         }
 
-        memo.setStatus(MemoStatus.SUBMITTED); // Or IN_REVIEW depending on process
-        memo.setCurrentStage("Manager Approval");
+        memo.setStatus(MemoStatus.SUBMITTED);
+        memo.setCurrentStage("Workflow Started");
 
         memo = memoRepository.save(memo);
         return toDTO(memo);
@@ -178,5 +203,32 @@ public class MemoService {
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid status: " + statusStr);
         }
+    }
+
+    /**
+     * Get memos that user can view (including view-only access).
+     * Returns all memos user has permission to view, regardless of action
+     * permission.
+     */
+    @Transactional(readOnly = true)
+    public List<MemoDTO> getViewableMemos(String userId, List<String> roles, String departmentId) {
+        log.debug("Getting viewable memos for user: {}, roles: {}, dept: {}", userId, roles, departmentId);
+
+        List<UUID> viewableMemoIds = viewerService.getViewableMemos(userId, roles, departmentId);
+
+        return viewableMemoIds.stream()
+                .map(memoRepository::findById)
+                .filter(java.util.Optional::isPresent)
+                .map(java.util.Optional::get)
+                .map(this::toDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Check if user can view a specific memo.
+     */
+    @Transactional(readOnly = true)
+    public boolean canViewMemo(UUID memoId, String userId, List<String> roles, String departmentId) {
+        return viewerService.canViewMemo(memoId, userId, roles, departmentId);
     }
 }

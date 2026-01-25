@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:flowable="http://flowable.org/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_CAM"
+                  targetNamespace="http://memo.enterprise.com/bpmn">
+  <bpmn:process id="credit_approval_memo" name="Credit Approval Memo Workflow" isExecutable="true">
+    
+    <bpmn:startEvent id="start" name="Memo Submitted">
+      <bpmn:outgoing>flow_to_rm</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <bpmn:userTask id="rm_review" name="RM Review">
+      <bpmn:documentation>{"strategy":"ROLE","role":"${roleRM}","scope":"ORIGINATING_BRANCH","conditions":[],"escalationLevels":[{"duration":"${escalationDelayLow}","role":"${roleBM}","scope":"ORIGINATING_BRANCH"}]}</bpmn:documentation>
+      <bpmn:extensionElements>
+        <flowable:taskListener event="create" delegateExpression="${assignmentTaskListener}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_to_rm</bpmn:incoming>
+      <bpmn:outgoing>flow_to_bm</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="branch_manager_verify" name="Branch Manager Verification">
+      <bpmn:documentation>{"strategy":"ROLE","role":"${roleBM}","scope":"ORIGINATING_BRANCH","conditions":[],"escalationLevels":[{"duration":"${escalationDelayMedium}","role":"${roleDistrictHead}","scope":"DISTRICT"}]}</bpmn:documentation>
+      <bpmn:extensionElements>
+        <flowable:taskListener event="create" delegateExpression="${assignmentTaskListener}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_to_bm</bpmn:incoming>
+      <bpmn:outgoing>flow_to_analyst</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="credit_analyst" name="Credit Analyst Assessment">
+      <bpmn:documentation>{"strategy":"ROLE","role":"${roleCreditAnalyst}","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:extensionElements>
+        <flowable:taskListener event="create" delegateExpression="${assignmentTaskListener}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_to_analyst</bpmn:incoming>
+      <bpmn:outgoing>flow_to_risk</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="risk_review" name="Risk Department Review">
+      <bpmn:documentation>{"strategy":"ROLE","role":"${roleRiskOfficer}","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:extensionElements>
+        <flowable:taskListener event="create" delegateExpression="${assignmentTaskListener}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_to_risk</bpmn:incoming>
+      <bpmn:outgoing>flow_to_gateway</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:exclusiveGateway id="amount_gateway" name="Amount Check">
+      <bpmn:incoming>flow_to_gateway</bpmn:incoming>
+      <bpmn:outgoing>flow_low_amount</bpmn:outgoing>
+      <bpmn:outgoing>flow_high_amount</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    
+    <bpmn:userTask id="individual_approver" name="Approval Authority">
+      <bpmn:documentation>{"strategy":"AUTHORITY","limitField":"amount","selection":"LOWEST_MATCH","scope":"HEAD_OFFICE","role":"${roleApprover}","conditions":[{"field":"amount","operator":"lt","value":"${approvalThreshold}"}],"escalationLevels":[{"duration":"${escalationDelayMedium}","role":"${roleCreditCommitteeA}","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:extensionElements>
+        <flowable:taskListener event="create" delegateExpression="${assignmentTaskListener}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_low_amount</bpmn:incoming>
+      <bpmn:outgoing>flow_approver_end</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="credit_committee" name="Credit Committee Approval">
+      <bpmn:documentation>{"strategy":"COMMITTEE","committeeCode":"${committeeCreditA}","decisionRule":"MAJORITY","requiredApprovals":3,"totalMembers":5,"scope":"HEAD_OFFICE","conditions":[{"field":"amount","operator":"gte","value":"${approvalThreshold}"}],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:extensionElements>
+        <flowable:taskListener event="create" delegateExpression="${assignmentTaskListener}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow_high_amount</bpmn:incoming>
+      <bpmn:outgoing>flow_committee_end</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:endEvent id="end" name="Memo Approved">
+      <bpmn:incoming>flow_approver_end</bpmn:incoming>
+      <bpmn:incoming>flow_committee_end</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <bpmn:sequenceFlow id="flow_to_rm" sourceRef="start" targetRef="rm_review" />
+    <bpmn:sequenceFlow id="flow_to_bm" sourceRef="rm_review" targetRef="branch_manager_verify" />
+    <bpmn:sequenceFlow id="flow_to_analyst" sourceRef="branch_manager_verify" targetRef="credit_analyst" />
+    <bpmn:sequenceFlow id="flow_to_risk" sourceRef="credit_analyst" targetRef="risk_review" />
+    <bpmn:sequenceFlow id="flow_to_gateway" sourceRef="risk_review" targetRef="amount_gateway" />
+    <bpmn:sequenceFlow id="flow_low_amount" name="Amount &lt; Threshold" sourceRef="amount_gateway" targetRef="individual_approver">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${amount &lt; approvalThreshold}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_high_amount" name="Amount &gt;= Threshold" sourceRef="amount_gateway" targetRef="credit_committee">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${amount &gt;= approvalThreshold}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="flow_approver_end" sourceRef="individual_approver" targetRef="end" />
+    <bpmn:sequenceFlow id="flow_committee_end" sourceRef="credit_committee" targetRef="end" />
+  </bpmn:process>
+  
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="credit_approval_memo">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="152" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="125" y="235" width="90" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="rm_review_di" bpmnElement="rm_review">
+        <dc:Bounds x="240" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branch_manager_verify_di" bpmnElement="branch_manager_verify">
+        <dc:Bounds x="390" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="credit_analyst_di" bpmnElement="credit_analyst">
+        <dc:Bounds x="540" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="risk_review_di" bpmnElement="risk_review">
+        <dc:Bounds x="690" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="amount_gateway_di" bpmnElement="amount_gateway" isMarkerVisible="true">
+        <dc:Bounds x="845" y="185" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="833" y="242" width="75" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="individual_approver_di" bpmnElement="individual_approver">
+        <dc:Bounds x="950" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="credit_committee_di" bpmnElement="credit_committee">
+        <dc:Bounds x="950" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="1112" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1092" y="235" width="77" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="flow_to_rm_di" bpmnElement="flow_to_rm">
+        <di:waypoint x="188" y="210" /><di:waypoint x="240" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_bm_di" bpmnElement="flow_to_bm">
+        <di:waypoint x="340" y="210" /><di:waypoint x="390" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_analyst_di" bpmnElement="flow_to_analyst">
+        <di:waypoint x="490" y="210" /><di:waypoint x="540" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_risk_di" bpmnElement="flow_to_risk">
+        <di:waypoint x="640" y="210" /><di:waypoint x="690" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_gateway_di" bpmnElement="flow_to_gateway">
+        <di:waypoint x="790" y="210" /><di:waypoint x="845" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_low_amount_di" bpmnElement="flow_low_amount">
+        <di:waypoint x="870" y="185" /><di:waypoint x="870" y="120" /><di:waypoint x="950" y="120" />
+        <bpmndi:BPMNLabel><dc:Bounds x="876" y="143" width="70" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_high_amount_di" bpmnElement="flow_high_amount">
+        <di:waypoint x="870" y="235" /><di:waypoint x="870" y="300" /><di:waypoint x="950" y="300" />
+        <bpmndi:BPMNLabel><dc:Bounds x="876" y="263" width="75" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_approver_end_di" bpmnElement="flow_approver_end">
+        <di:waypoint x="1050" y="120" /><di:waypoint x="1130" y="120" /><di:waypoint x="1130" y="192" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_committee_end_di" bpmnElement="flow_committee_end">
+        <di:waypoint x="1050" y="300" /><di:waypoint x="1130" y="300" /><di:waypoint x="1130" y="228" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

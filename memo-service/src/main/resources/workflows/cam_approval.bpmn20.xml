@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://www.enterprise.com/memo"
+             id="credit-approval-memo-definitions">
+
+  <process id="cam_approval" name="Credit Approval Memo Workflow" isExecutable="true">
+
+    <!-- ===================== START ===================== -->
+    <startEvent id="start" name="Memo Submitted">
+      <outgoing>flow_to_bm</outgoing>
+    </startEvent>
+
+    <!-- ===================== STAGE 1: BRANCH MANAGER REVIEW ===================== -->
+    <userTask id="task_bm_review" name="Branch Manager Review" 
+              flowable:candidateGroups="ROLE_BRANCH_MANAGER"
+              flowable:formKey="cam_bm_review">
+      <incoming>flow_to_bm</incoming>
+      <incoming>flow_resubmit_to_bm</incoming>
+      <outgoing>flow_bm_decision</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="gw_bm_decision" name="BM Decision">
+      <incoming>flow_bm_decision</incoming>
+      <outgoing>flow_bm_approved</outgoing>
+      <outgoing>flow_bm_sendback</outgoing>
+      <outgoing>flow_bm_reject</outgoing>
+    </exclusiveGateway>
+
+    <!-- Send Back to Initiator -->
+    <userTask id="task_rm_correction" name="RM Correction"
+              flowable:assignee="${initiatorId}">
+      <incoming>flow_bm_sendback</incoming>
+      <incoming>flow_credit_clarification</incoming>
+      <outgoing>flow_resubmit_to_bm</outgoing>
+    </userTask>
+
+    <!-- ===================== STAGE 2: CREDIT ANALYST REVIEW ===================== -->
+    <userTask id="task_credit_review" name="Credit Analyst Review"
+              flowable:candidateGroups="ROLE_CREDIT_ANALYST">
+      <incoming>flow_bm_approved</incoming>
+      <outgoing>flow_credit_decision</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="gw_credit_decision" name="Credit Decision">
+      <incoming>flow_credit_decision</incoming>
+      <outgoing>flow_credit_recommend</outgoing>
+      <outgoing>flow_credit_clarification</outgoing>
+      <outgoing>flow_credit_reject</outgoing>
+    </exclusiveGateway>
+
+    <!-- ===================== STAGE 3: RISK REVIEW ===================== -->
+    <userTask id="task_risk_review" name="Risk Review"
+              flowable:candidateGroups="ROLE_RISK_OFFICER">
+      <incoming>flow_credit_recommend</incoming>
+      <outgoing>flow_risk_decision</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="gw_risk_decision" name="Risk Decision">
+      <incoming>flow_risk_decision</incoming>
+      <outgoing>flow_risk_cleared</outgoing>
+      <outgoing>flow_risk_not_recommended</outgoing>
+    </exclusiveGateway>
+
+    <!-- ===================== STAGE 4: APPROVAL AUTHORITY ===================== -->
+    <exclusiveGateway id="gw_amount_routing" name="Amount Routing">
+      <incoming>flow_risk_cleared</incoming>
+      <outgoing>flow_to_committee_a</outgoing>
+      <outgoing>flow_to_committee_b</outgoing>
+      <outgoing>flow_to_board</outgoing>
+    </exclusiveGateway>
+
+    <userTask id="task_committee_a" name="Committee A (≤50L)"
+              flowable:candidateGroups="ROLE_CREDIT_COMMITTEE_A">
+      <incoming>flow_to_committee_a</incoming>
+      <outgoing>flow_committee_a_decision</outgoing>
+    </userTask>
+
+    <userTask id="task_committee_b" name="Committee B (≤5Cr)"
+              flowable:candidateGroups="ROLE_CREDIT_COMMITTEE_B">
+      <incoming>flow_to_committee_b</incoming>
+      <outgoing>flow_committee_b_decision</outgoing>
+    </userTask>
+
+    <userTask id="task_board_approval" name="Board/CEO (>5Cr)"
+              flowable:candidateGroups="ROLE_BOARD,ROLE_CEO">
+      <incoming>flow_to_board</incoming>
+      <outgoing>flow_board_decision</outgoing>
+    </userTask>
+
+    <exclusiveGateway id="gw_merge_approvals" name="Merge">
+      <incoming>flow_committee_a_decision</incoming>
+      <incoming>flow_committee_b_decision</incoming>
+      <incoming>flow_board_decision</incoming>
+      <outgoing>flow_check_final</outgoing>
+    </exclusiveGateway>
+
+    <exclusiveGateway id="gw_final_decision" name="Final?">
+      <incoming>flow_check_final</incoming>
+      <outgoing>flow_final_approved</outgoing>
+      <outgoing>flow_final_rejected</outgoing>
+    </exclusiveGateway>
+
+    <!-- ===================== END STATES ===================== -->
+    <endEvent id="end_approved" name="Approved">
+      <incoming>flow_final_approved</incoming>
+    </endEvent>
+
+    <endEvent id="end_rejected" name="Rejected">
+      <incoming>flow_bm_reject</incoming>
+      <incoming>flow_credit_reject</incoming>
+      <incoming>flow_risk_not_recommended</incoming>
+      <incoming>flow_final_rejected</incoming>
+    </endEvent>
+
+    <!-- ===================== SEQUENCE FLOWS ===================== -->
+    <sequenceFlow id="flow_to_bm" sourceRef="start" targetRef="task_bm_review"/>
+    <sequenceFlow id="flow_bm_decision" sourceRef="task_bm_review" targetRef="gw_bm_decision"/>
+    <sequenceFlow id="flow_bm_approved" sourceRef="gw_bm_decision" targetRef="task_credit_review">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'APPROVE'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_bm_sendback" sourceRef="gw_bm_decision" targetRef="task_rm_correction">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'SEND_BACK'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_bm_reject" sourceRef="gw_bm_decision" targetRef="end_rejected">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'REJECT'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_resubmit_to_bm" sourceRef="task_rm_correction" targetRef="task_bm_review"/>
+    <sequenceFlow id="flow_credit_decision" sourceRef="task_credit_review" targetRef="gw_credit_decision"/>
+    <sequenceFlow id="flow_credit_recommend" sourceRef="gw_credit_decision" targetRef="task_risk_review">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'RECOMMEND'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_credit_clarification" sourceRef="gw_credit_decision" targetRef="task_rm_correction">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'CLARIFICATION'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_credit_reject" sourceRef="gw_credit_decision" targetRef="end_rejected">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'REJECT'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_risk_decision" sourceRef="task_risk_review" targetRef="gw_risk_decision"/>
+    <sequenceFlow id="flow_risk_cleared" sourceRef="gw_risk_decision" targetRef="gw_amount_routing">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'CLEARED'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_risk_not_recommended" sourceRef="gw_risk_decision" targetRef="end_rejected">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'NOT_RECOMMENDED'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_to_committee_a" sourceRef="gw_amount_routing" targetRef="task_committee_a">
+      <conditionExpression xsi:type="tFormalExpression">${amount &lt;= 5000000}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_to_committee_b" sourceRef="gw_amount_routing" targetRef="task_committee_b">
+      <conditionExpression xsi:type="tFormalExpression">${amount &gt; 5000000 &amp;&amp; amount &lt;= 50000000}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_to_board" sourceRef="gw_amount_routing" targetRef="task_board_approval">
+      <conditionExpression xsi:type="tFormalExpression">${amount &gt; 50000000}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_committee_a_decision" sourceRef="task_committee_a" targetRef="gw_merge_approvals"/>
+    <sequenceFlow id="flow_committee_b_decision" sourceRef="task_committee_b" targetRef="gw_merge_approvals"/>
+    <sequenceFlow id="flow_board_decision" sourceRef="task_board_approval" targetRef="gw_merge_approvals"/>
+    <sequenceFlow id="flow_check_final" sourceRef="gw_merge_approvals" targetRef="gw_final_decision"/>
+    <sequenceFlow id="flow_final_approved" sourceRef="gw_final_decision" targetRef="end_approved">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'APPROVE'}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_final_rejected" sourceRef="gw_final_decision" targetRef="end_rejected">
+      <conditionExpression xsi:type="tFormalExpression">${decision == 'REJECT'}</conditionExpression>
+    </sequenceFlow>
+
+  </process>
+
+  <!-- ===================== BPMN DIAGRAM (Visual Layout) ===================== -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_cam">
+    <bpmndi:BPMNPlane id="BPMNPlane_cam" bpmnElement="cam_approval">
+      <!-- Start -->
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <omgdc:Bounds x="100" y="200" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- BM Review -->
+      <bpmndi:BPMNShape id="task_bm_review_di" bpmnElement="task_bm_review">
+        <omgdc:Bounds x="200" y="178" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_bm_decision_di" bpmnElement="gw_bm_decision" isMarkerVisible="true">
+        <omgdc:Bounds x="350" y="193" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- RM Correction -->
+      <bpmndi:BPMNShape id="task_rm_correction_di" bpmnElement="task_rm_correction">
+        <omgdc:Bounds x="200" y="320" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Credit Review -->
+      <bpmndi:BPMNShape id="task_credit_review_di" bpmnElement="task_credit_review">
+        <omgdc:Bounds x="460" y="178" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_credit_decision_di" bpmnElement="gw_credit_decision" isMarkerVisible="true">
+        <omgdc:Bounds x="610" y="193" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Risk Review -->
+      <bpmndi:BPMNShape id="task_risk_review_di" bpmnElement="task_risk_review">
+        <omgdc:Bounds x="720" y="178" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_risk_decision_di" bpmnElement="gw_risk_decision" isMarkerVisible="true">
+        <omgdc:Bounds x="870" y="193" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Amount Routing -->
+      <bpmndi:BPMNShape id="gw_amount_routing_di" bpmnElement="gw_amount_routing" isMarkerVisible="true">
+        <omgdc:Bounds x="980" y="193" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Committees -->
+      <bpmndi:BPMNShape id="task_committee_a_di" bpmnElement="task_committee_a">
+        <omgdc:Bounds x="1090" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="task_committee_b_di" bpmnElement="task_committee_b">
+        <omgdc:Bounds x="1090" y="178" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="task_board_approval_di" bpmnElement="task_board_approval">
+        <omgdc:Bounds x="1090" y="280" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Merge & Final -->
+      <bpmndi:BPMNShape id="gw_merge_approvals_di" bpmnElement="gw_merge_approvals" isMarkerVisible="true">
+        <omgdc:Bounds x="1250" y="193" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_final_decision_di" bpmnElement="gw_final_decision" isMarkerVisible="true">
+        <omgdc:Bounds x="1360" y="193" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- End Events -->
+      <bpmndi:BPMNShape id="end_approved_di" bpmnElement="end_approved">
+        <omgdc:Bounds x="1470" y="200" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_rejected_di" bpmnElement="end_rejected">
+        <omgdc:Bounds x="1470" y="340" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Flows -->
+      <bpmndi:BPMNEdge id="flow_to_bm_di" bpmnElement="flow_to_bm">
+        <omgdi:waypoint x="136" y="218"/><omgdi:waypoint x="200" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_bm_decision_di" bpmnElement="flow_bm_decision">
+        <omgdi:waypoint x="300" y="218"/><omgdi:waypoint x="350" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_bm_approved_di" bpmnElement="flow_bm_approved">
+        <omgdi:waypoint x="400" y="218"/><omgdi:waypoint x="460" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_bm_sendback_di" bpmnElement="flow_bm_sendback">
+        <omgdi:waypoint x="375" y="243"/><omgdi:waypoint x="375" y="360"/><omgdi:waypoint x="300" y="360"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_bm_reject_di" bpmnElement="flow_bm_reject">
+        <omgdi:waypoint x="375" y="243"/><omgdi:waypoint x="375" y="358"/><omgdi:waypoint x="1470" y="358"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_resubmit_to_bm_di" bpmnElement="flow_resubmit_to_bm">
+        <omgdi:waypoint x="200" y="360"/><omgdi:waypoint x="160" y="360"/><omgdi:waypoint x="160" y="218"/><omgdi:waypoint x="200" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_credit_decision_di" bpmnElement="flow_credit_decision">
+        <omgdi:waypoint x="560" y="218"/><omgdi:waypoint x="610" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_credit_recommend_di" bpmnElement="flow_credit_recommend">
+        <omgdi:waypoint x="660" y="218"/><omgdi:waypoint x="720" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_credit_clarification_di" bpmnElement="flow_credit_clarification">
+        <omgdi:waypoint x="635" y="243"/><omgdi:waypoint x="635" y="360"/><omgdi:waypoint x="300" y="360"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_credit_reject_di" bpmnElement="flow_credit_reject">
+        <omgdi:waypoint x="635" y="243"/><omgdi:waypoint x="635" y="358"/><omgdi:waypoint x="1470" y="358"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_risk_decision_di" bpmnElement="flow_risk_decision">
+        <omgdi:waypoint x="820" y="218"/><omgdi:waypoint x="870" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_risk_cleared_di" bpmnElement="flow_risk_cleared">
+        <omgdi:waypoint x="920" y="218"/><omgdi:waypoint x="980" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_risk_not_recommended_di" bpmnElement="flow_risk_not_recommended">
+        <omgdi:waypoint x="895" y="243"/><omgdi:waypoint x="895" y="358"/><omgdi:waypoint x="1470" y="358"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_committee_a_di" bpmnElement="flow_to_committee_a">
+        <omgdi:waypoint x="1005" y="193"/><omgdi:waypoint x="1005" y="120"/><omgdi:waypoint x="1090" y="120"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_committee_b_di" bpmnElement="flow_to_committee_b">
+        <omgdi:waypoint x="1030" y="218"/><omgdi:waypoint x="1090" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_board_di" bpmnElement="flow_to_board">
+        <omgdi:waypoint x="1005" y="243"/><omgdi:waypoint x="1005" y="320"/><omgdi:waypoint x="1090" y="320"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_committee_a_decision_di" bpmnElement="flow_committee_a_decision">
+        <omgdi:waypoint x="1190" y="120"/><omgdi:waypoint x="1275" y="120"/><omgdi:waypoint x="1275" y="193"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_committee_b_decision_di" bpmnElement="flow_committee_b_decision">
+        <omgdi:waypoint x="1190" y="218"/><omgdi:waypoint x="1250" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_board_decision_di" bpmnElement="flow_board_decision">
+        <omgdi:waypoint x="1190" y="320"/><omgdi:waypoint x="1275" y="320"/><omgdi:waypoint x="1275" y="243"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_check_final_di" bpmnElement="flow_check_final">
+        <omgdi:waypoint x="1300" y="218"/><omgdi:waypoint x="1360" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_final_approved_di" bpmnElement="flow_final_approved">
+        <omgdi:waypoint x="1410" y="218"/><omgdi:waypoint x="1470" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_final_rejected_di" bpmnElement="flow_final_rejected">
+        <omgdi:waypoint x="1385" y="243"/><omgdi:waypoint x="1385" y="358"/><omgdi:waypoint x="1470" y="358"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

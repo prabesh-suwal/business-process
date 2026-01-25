@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:flowable="http://flowable.org/bpmn"
+                  id="Definitions_VOM"
+                  targetNamespace="http://memo.enterprise.com/bpmn">
+  <bpmn:process id="vendor_onboarding_memo" name="Vendor Onboarding Memo Workflow" isExecutable="true">
+    
+    <bpmn:startEvent id="start" name="Request Submitted">
+      <bpmn:outgoing>flow_to_initiation</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <bpmn:userTask id="business_initiation" name="Business Initiation" flowable:candidateGroups="ROLE_BUSINESS_TEAM">
+      <bpmn:documentation>{"strategy":"ROLE","role":"BUSINESS_TEAM","scope":"ORIGINATING_BRANCH","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_initiation</bpmn:incoming>
+      <bpmn:outgoing>flow_to_fork</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:parallelGateway id="parallel_fork" name="Start Parallel Reviews">
+      <bpmn:incoming>flow_to_fork</bpmn:incoming>
+      <bpmn:outgoing>flow_to_procurement</bpmn:outgoing>
+      <bpmn:outgoing>flow_to_finance</bpmn:outgoing>
+      <bpmn:outgoing>flow_to_legal</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    
+    <bpmn:userTask id="procurement_review" name="Procurement Review" flowable:candidateGroups="ROLE_PROCUREMENT">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"PROCUREMENT","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P2D","role":"OPERATIONS_MANAGER","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_procurement</bpmn:incoming>
+      <bpmn:outgoing>flow_from_procurement</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="finance_due_diligence" name="Finance Due Diligence" flowable:candidateGroups="ROLE_FINANCE">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"FINANCE","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P2D","role":"CFO","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_finance</bpmn:incoming>
+      <bpmn:outgoing>flow_from_finance</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="legal_review" name="Legal Compliance Review" flowable:candidateGroups="ROLE_LEGAL">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"LEGAL","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P3D","role":"CLO","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_legal</bpmn:incoming>
+      <bpmn:outgoing>flow_from_legal</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:parallelGateway id="parallel_join" name="All Reviews Complete">
+      <bpmn:incoming>flow_from_procurement</bpmn:incoming>
+      <bpmn:incoming>flow_from_finance</bpmn:incoming>
+      <bpmn:incoming>flow_from_legal</bpmn:incoming>
+      <bpmn:outgoing>flow_to_approval</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    
+    <bpmn:userTask id="final_approval" name="Final Approval" flowable:candidateGroups="ROLE_APPROVER">
+      <bpmn:documentation>{"strategy":"AUTHORITY","limitField":"contractValue","selection":"LOWEST_MATCH","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_approval</bpmn:incoming>
+      <bpmn:outgoing>flow_to_end</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:endEvent id="end" name="Vendor Approved">
+      <bpmn:incoming>flow_to_end</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <bpmn:sequenceFlow id="flow_to_initiation" sourceRef="start" targetRef="business_initiation" />
+    <bpmn:sequenceFlow id="flow_to_fork" sourceRef="business_initiation" targetRef="parallel_fork" />
+    <bpmn:sequenceFlow id="flow_to_procurement" sourceRef="parallel_fork" targetRef="procurement_review" />
+    <bpmn:sequenceFlow id="flow_to_finance" sourceRef="parallel_fork" targetRef="finance_due_diligence" />
+    <bpmn:sequenceFlow id="flow_to_legal" sourceRef="parallel_fork" targetRef="legal_review" />
+    <bpmn:sequenceFlow id="flow_from_procurement" sourceRef="procurement_review" targetRef="parallel_join" />
+    <bpmn:sequenceFlow id="flow_from_finance" sourceRef="finance_due_diligence" targetRef="parallel_join" />
+    <bpmn:sequenceFlow id="flow_from_legal" sourceRef="legal_review" targetRef="parallel_join" />
+    <bpmn:sequenceFlow id="flow_to_approval" sourceRef="parallel_join" targetRef="final_approval" />
+    <bpmn:sequenceFlow id="flow_to_end" sourceRef="final_approval" targetRef="end" />
+  </bpmn:process>
+  
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="vendor_onboarding_memo">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="152" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="business_initiation_di" bpmnElement="business_initiation">
+        <dc:Bounds x="240" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="parallel_fork_di" bpmnElement="parallel_fork">
+        <dc:Bounds x="395" y="185" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="procurement_review_di" bpmnElement="procurement_review">
+        <dc:Bounds x="500" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="finance_due_diligence_di" bpmnElement="finance_due_diligence">
+        <dc:Bounds x="500" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="legal_review_di" bpmnElement="legal_review">
+        <dc:Bounds x="500" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="parallel_join_di" bpmnElement="parallel_join">
+        <dc:Bounds x="655" y="185" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="final_approval_di" bpmnElement="final_approval">
+        <dc:Bounds x="760" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="912" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="flow_to_initiation_di" bpmnElement="flow_to_initiation">
+        <di:waypoint x="188" y="210" /><di:waypoint x="240" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_fork_di" bpmnElement="flow_to_fork">
+        <di:waypoint x="340" y="210" /><di:waypoint x="395" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_procurement_di" bpmnElement="flow_to_procurement">
+        <di:waypoint x="420" y="185" /><di:waypoint x="420" y="120" /><di:waypoint x="500" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_finance_di" bpmnElement="flow_to_finance">
+        <di:waypoint x="445" y="210" /><di:waypoint x="500" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_legal_di" bpmnElement="flow_to_legal">
+        <di:waypoint x="420" y="235" /><di:waypoint x="420" y="300" /><di:waypoint x="500" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_from_procurement_di" bpmnElement="flow_from_procurement">
+        <di:waypoint x="600" y="120" /><di:waypoint x="680" y="120" /><di:waypoint x="680" y="185" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_from_finance_di" bpmnElement="flow_from_finance">
+        <di:waypoint x="600" y="210" /><di:waypoint x="655" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_from_legal_di" bpmnElement="flow_from_legal">
+        <di:waypoint x="600" y="300" /><di:waypoint x="680" y="300" /><di:waypoint x="680" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_approval_di" bpmnElement="flow_to_approval">
+        <di:waypoint x="705" y="210" /><di:waypoint x="760" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_end_di" bpmnElement="flow_to_end">
+        <di:waypoint x="860" y="210" /><di:waypoint x="912" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

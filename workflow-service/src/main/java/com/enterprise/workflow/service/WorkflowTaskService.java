@@ -52,18 +52,20 @@ public class WorkflowTaskService {
 
     /**
      * Get tasks where user is a candidate (can claim).
+     * For MVP: if no roles provided, returns ALL unassigned tasks.
      */
     @Transactional(readOnly = true)
     public List<TaskDTO> getCandidateTasks(String userId, List<String> groups) {
         TaskQuery query = taskService.createTaskQuery()
                 .taskUnassigned();
 
-        if (userId != null) {
-            query.taskCandidateUser(userId);
-        }
+        // For MVP, if no groups specified, just return all unassigned tasks
+        // In production, we would require proper role matching
         if (groups != null && !groups.isEmpty()) {
             query.taskCandidateGroupIn(groups);
         }
+        // Don't filter by candidateUser if no groups - allows seeing all unassigned
+        // tasks
 
         List<Task> tasks = query
                 .orderByTaskCreateTime()

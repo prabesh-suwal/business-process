@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:flowable="http://flowable.org/bpmn"
+                  id="Definitions_MRM"
+                  targetNamespace="http://memo.enterprise.com/bpmn">
+  <bpmn:process id="manpower_requisition_memo" name="Manpower Requisition Memo Workflow" isExecutable="true">
+    
+    <bpmn:startEvent id="start" name="Request Submitted">
+      <bpmn:outgoing>flow_to_hod</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <bpmn:userTask id="hod_request" name="HOD Request" flowable:candidateGroups="ROLE_DEPARTMENT_HEAD">
+      <bpmn:documentation>{"strategy":"ROLE","role":"DEPARTMENT_HEAD","scope":"ORIGINATING_BRANCH","conditions":[],"escalationLevels":[]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_hod</bpmn:incoming>
+      <bpmn:outgoing>flow_to_hr</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="hr_verification" name="HR Verification" flowable:candidateGroups="ROLE_HR_MANAGER">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"HR","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P2D","role":"HR_HEAD","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_hr</bpmn:incoming>
+      <bpmn:outgoing>flow_to_budget</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="budget_verification" name="Budget Verification" flowable:candidateGroups="ROLE_FINANCE">
+      <bpmn:documentation>{"strategy":"DEPARTMENT","department":"FINANCE","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P2D","role":"CFO","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_budget</bpmn:incoming>
+      <bpmn:outgoing>flow_to_coo</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:userTask id="coo_approval" name="COO Approval" flowable:candidateGroups="ROLE_COO">
+      <bpmn:documentation>{"strategy":"ROLE","role":"COO","scope":"HEAD_OFFICE","conditions":[],"escalationLevels":[{"duration":"P3D","role":"CEO","scope":"HEAD_OFFICE"}]}</bpmn:documentation>
+      <bpmn:incoming>flow_to_coo</bpmn:incoming>
+      <bpmn:outgoing>flow_to_end</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:endEvent id="end" name="Requisition Approved">
+      <bpmn:incoming>flow_to_end</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <bpmn:sequenceFlow id="flow_to_hod" sourceRef="start" targetRef="hod_request" />
+    <bpmn:sequenceFlow id="flow_to_hr" sourceRef="hod_request" targetRef="hr_verification" />
+    <bpmn:sequenceFlow id="flow_to_budget" sourceRef="hr_verification" targetRef="budget_verification" />
+    <bpmn:sequenceFlow id="flow_to_coo" sourceRef="budget_verification" targetRef="coo_approval" />
+    <bpmn:sequenceFlow id="flow_to_end" sourceRef="coo_approval" targetRef="end" />
+  </bpmn:process>
+  
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="manpower_requisition_memo">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="hod_request_di" bpmnElement="hod_request">
+        <dc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="hr_verification_di" bpmnElement="hr_verification">
+        <dc:Bounds x="390" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="budget_verification_di" bpmnElement="budget_verification">
+        <dc:Bounds x="540" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="coo_approval_di" bpmnElement="coo_approval">
+        <dc:Bounds x="690" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="842" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="flow_to_hod_di" bpmnElement="flow_to_hod">
+        <di:waypoint x="188" y="120" /><di:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_hr_di" bpmnElement="flow_to_hr">
+        <di:waypoint x="340" y="120" /><di:waypoint x="390" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_budget_di" bpmnElement="flow_to_budget">
+        <di:waypoint x="490" y="120" /><di:waypoint x="540" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_coo_di" bpmnElement="flow_to_coo">
+        <di:waypoint x="640" y="120" /><di:waypoint x="690" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="flow_to_end_di" bpmnElement="flow_to_end">
+        <di:waypoint x="790" y="120" /><di:waypoint x="842" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -217,6 +217,122 @@ public class AdminService {
                 userRole.getRole().getCode(), userRole.getUser().getUsername());
     }
 
+    // ==================== AUTHORITY-BASED USER QUERY ====================
+
+    /**
+     * Finds users who have a specific role with approval authority >= the required
+     * amount.
+     * Used for authority-based task routing in workflow systems.
+     *
+     * @param roleName       The role code/name to filter by (e.g., "APPROVER",
+     *                       "CREDIT_OFFICER")
+     * @param requiredAmount The minimum approval amount required
+     * @param branchId       Optional branch scope filter
+     * @param regionId       Optional region scope filter
+     * @return List of UserDto with users matching the criteria
+     */
+    @Transactional(readOnly = true)
+    public List<UserDto> findUsersWithApprovalAuthority(String roleName, Long requiredAmount,
+            String branchId, String regionId) {
+        log.debug("Finding users with role {} and approval authority >= {}", roleName, requiredAmount);
+
+        // Get all active user roles for the specified role name
+        List<UserRole> userRoles = userRoleRepository.findActiveUserRolesByRoleName(roleName);
+
+        // Filter by approval amount and scope
+        List<User> matchingUsers = userRoles.stream()
+                .filter(ur -> {
+                    // Check approval amount constraint
+                    Long maxApproval = ur.getMaxApprovalAmount().longValue();
+                    if (maxApproval == null || maxApproval < requiredAmount) {
+                        return false;
+                    }
+
+                    // Check branch scope if specified
+                    if (branchId != null && !branchId.isEmpty()) {
+                        User user = ur.getUser();
+                        if (user.getBranchId() == null || !user.getBranchId().equals(branchId)) {
+                            return false;
+                        }
+                    }
+
+                    // Check region scope if specified (via branchId prefix or departmentId)
+                    if (regionId != null && !regionId.isEmpty()) {
+                        User user = ur.getUser();
+                        // Simple region check - branchId starts with regionId or departmentId matches
+                        boolean regionMatch = (user.getBranchId() != null
+                                && user.getBranchId().toString().startsWith(regionId))
+                                || (user.getDepartmentId() != null && user.getDepartmentId().equals(regionId));
+                        if (!regionMatch) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                })
+                .map(UserRole::getUser)
+                .filter(u -> u.getStatus() == User.UserStatus.ACTIVE)
+                .distinct()
+                .collect(Collectors.toList());
+
+        log.info("Found {} users with role {} and approval authority >= {}",
+                matchingUsers.size(), roleName, requiredAmount);
+
+        return matchingUsers.stream()
+                .map(this::toUserDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Gets the user with the lowest approval authority that still meets the
+     * requirement.
+     * Useful for "LOWEST_MATCH" authority selection strategy.
+     */
+    @Transactional(readOnly = true)
+    public Optional<UserDto> findUserWithLowestMatchingAuthority(String roleName, Long requiredAmount,
+            String branchId, String regionId) {
+        List<UserRole> userRoles = userRoleRepository.findActiveUserRolesByRoleName(roleName);
+
+        return userRoles.stream()
+                .filter(ur -> {
+                    Long maxApproval = ur.getMaxApprovalAmount().longValue();
+                    if (maxApproval == null || maxApproval < requiredAmount) {
+                        return false;
+                    }
+                    if (branchId != null && !branchId.isEmpty()) {
+                        User user = ur.getUser();
+                        if (user.getBranchId() == null || !user.getBranchId().equals(branchId)) {
+                            return false;
+                        }
+                    }
+                    return ur.getUser().getStatus() == User.UserStatus.ACTIVE;
+                })
+                .min(Comparator.comparingLong(ur -> ur.getMaxApprovalAmount().longValue()))
+                .map(ur -> toUserDto(ur.getUser()));
+    }
+
+    /**
+     * Gets the user with the highest approval authority.
+     * Useful for "HIGHEST" authority selection strategy.
+     */
+    @Transactional(readOnly = true)
+    public Optional<UserDto> findUserWithHighestAuthority(String roleName, String branchId, String regionId) {
+        List<UserRole> userRoles = userRoleRepository.findActiveUserRolesByRoleName(roleName);
+
+        return userRoles.stream()
+                .filter(ur -> {
+                    if (branchId != null && !branchId.isEmpty()) {
+                        User user = ur.getUser();
+                        if (user.getBranchId() == null || !user.getBranchId().equals(branchId)) {
+                            return false;
+                        }
+                    }
+                    return ur.getUser().getStatus() == User.UserStatus.ACTIVE && ur.getMaxApprovalAmount() != null;
+                })
+                .max(Comparator.comparingLong(ur -> ur.getMaxApprovalAmount().longValue()))
+                .map(ur -> toUserDto(ur.getUser()));
+    }
+
     private UserRoleDto toUserRoleDto(UserRole ur) {
         Role role = ur.getRole();
         return UserRoleDto.builder()
