@@ -93,8 +93,8 @@ public class MemoConfigurationService {
 
     /**
      * Deploy the topic's workflow BPMN to the Flowable engine.
-     * Creates a process template and links the resulting templateId back to the
-     * topic.
+     * Creates a ProcessTemplate in workflow-service and links the resulting
+     * processTemplateId back to the topic for centralized assignment resolution.
      * 
      * BPMN is enriched with task listeners before deployment to enable
      * dynamic assignment via webhook callbacks.
@@ -112,14 +112,16 @@ public class MemoConfigurationService {
         String enrichedXml = com.enterprise.memo.util.BpmnEnricher.enrichBpmn(topic.getWorkflowXml());
 
         // Call workflow-service to deploy the enriched BPMN
-        String templateId = workflowClient.deployBpmn(
+        com.enterprise.memo.client.WorkflowClient.BpmnDeployResult deployResult = workflowClient.deployBpmn(
                 topic.getCode(),
                 topic.getName() + " Workflow",
                 enrichedXml);
 
-        // Store the template ID
-        topic.setWorkflowTemplateId(templateId);
-        log.info("Workflow deployed successfully. Template ID: {}", templateId);
+        // Store the ProcessTemplate UUID (for centralized assignment resolution)
+        // The Flowable processDefinitionId is in the ProcessTemplate record
+        topic.setWorkflowTemplateId(deployResult.processTemplateId());
+        log.info("Workflow deployed successfully. ProcessTemplateId: {}, ProcessDefinitionId: {}",
+                deployResult.processTemplateId(), deployResult.processDefinitionId());
 
         return topicRepository.save(topic);
     }

@@ -75,29 +75,36 @@ const WorkflowDesignerPage = () => {
                 setAllSteps(steps);
             }
 
-            // Load saved step configurations
-            try {
-                const savedConfigs = await WorkflowConfigApi.getStepConfigs(topicId);
-                const configMap = {};
-                savedConfigs.forEach(c => {
-                    configMap[c.taskKey] = {
-                        // New multi-select format
-                        roles: c.assignmentConfig?.roles || [],
-                        departments: c.assignmentConfig?.departments || [],
-                        users: c.assignmentConfig?.users || [],
-                        // Legacy single-select format
-                        assignmentType: c.assignmentConfig?.type,
-                        role: c.assignmentConfig?.role,
-                        scope: c.assignmentConfig?.scope,
-                        group: c.assignmentConfig?.groupCode,
-                        duration: c.slaConfig?.duration,
-                        escalationAction: c.escalationConfig?.escalations?.[0]?.action,
-                        viewers: c.viewerConfig?.viewers || []
-                    };
-                });
-                setStepConfigs(configMap);
-            } catch (e) {
-                console.log('No saved configs found');
+            // Load saved step configurations from workflow-service
+            // Only if we have a processTemplateId (topic.workflowTemplateId)
+            const processTemplateId = topicData.workflowTemplateId;
+            if (processTemplateId) {
+                try {
+                    const savedConfigs = await WorkflowConfigApi.getTaskConfigs(processTemplateId);
+                    const configMap = {};
+                    savedConfigs.forEach(c => {
+                        configMap[c.taskKey] = {
+                            // New multi-select format
+                            roles: c.assignmentConfig?.roles || [],
+                            departments: c.assignmentConfig?.departments || [],
+                            users: c.assignmentConfig?.users || [],
+                            // Legacy single-select format
+                            assignmentType: c.assignmentConfig?.type,
+                            role: c.assignmentConfig?.role,
+                            scope: c.assignmentConfig?.scope,
+                            group: c.assignmentConfig?.groupCode,
+                            duration: c.slaConfig?.duration,
+                            escalationAction: c.escalationConfig?.escalations?.[0]?.action,
+                            viewers: c.viewerConfig?.viewers || []
+                        };
+                    });
+                    setStepConfigs(configMap);
+                    console.log('Loaded step configs from workflow-service:', configMap);
+                } catch (e) {
+                    console.log('No saved configs found in workflow-service:', e.message);
+                }
+            } else {
+                console.log('No processTemplateId - cannot load step configs from workflow-service');
             }
 
             // Load dropdown data with fallbacks
@@ -271,60 +278,70 @@ const WorkflowDesignerPage = () => {
             console.log('📋 stepConfigs:', JSON.stringify(stepConfigs, null, 2));
             console.log('🔢 Number of steps to save:', Object.keys(stepConfigs).length);
 
-            // First save everything (BPMN + configs)
+            // First save BPMN to topic
             await MemoApi.updateTopicWorkflow(topicId, bpmnXml);
 
-            // Save step configs
-            const savePromises = Object.keys(stepConfigs).map(taskKey => {
-                const uiConfig = stepConfigs[taskKey];
+            // Deploy the workflow to Flowable FIRST (creates ProcessTemplate, returns processTemplateId)
+            const deployResult = await MemoApi.deployTopicWorkflow(topicId);
+            console.log('🚀 Deployed workflow, result:', deployResult);
 
-                // Build assignment config with new multi-select format
-                const assignmentConfig = {
-                    roles: uiConfig.roles || [],
-                    departments: uiConfig.departments || [],
-                    users: uiConfig.users || []
-                };
+            // Refresh topic to get the new workflowTemplateId (processTemplateId)
+            const updatedTopic = await MemoApi.getTopic(topicId);
+            const processTemplateId = updatedTopic.workflowTemplateId;
+            setTopic(updatedTopic);
 
-                // Add legacy fields if they exist (backward compatibility)
-                if (uiConfig.assignmentType) assignmentConfig.type = uiConfig.assignmentType;
-                if (uiConfig.role) assignmentConfig.role = uiConfig.role;
-                if (uiConfig.scope) assignmentConfig.scope = uiConfig.scope;
-                if (uiConfig.group) assignmentConfig.groupCode = uiConfig.group;
-                if (uiConfig.department) assignmentConfig.department = uiConfig.department;
-                if (uiConfig.groupApproval) assignmentConfig.groupApproval = uiConfig.groupApproval;
+            console.log('📌 ProcessTemplateId:', processTemplateId);
 
-                const apiConfig = {
-                    taskName: allSteps.find(s => s.taskKey === taskKey)?.taskName || taskKey,
-                    assignmentConfig,
-                    slaConfig: uiConfig.duration ? { duration: uiConfig.duration } : {},
-                    escalationConfig: uiConfig.escalationAction ? {
-                        escalations: [{
-                            level: 1,
-                            after: uiConfig.duration,
-                            action: uiConfig.escalationAction
-                        }]
-                    } : {},
-                    viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {}
-                };
+            // Now save step configs to WORKFLOW-SERVICE using processTemplateId
+            if (processTemplateId) {
+                const savePromises = Object.keys(stepConfigs).map(taskKey => {
+                    const uiConfig = stepConfigs[taskKey];
 
-                console.log('Saving step config for', taskKey, ':', JSON.stringify(apiConfig, null, 2));
+                    // Build assignment config with new multi-select format
+                    const assignmentConfig = {
+                        roles: uiConfig.roles || [],
+                        departments: uiConfig.departments || [],
+                        users: uiConfig.users || []
+                    };
 
-                return WorkflowConfigApi.saveStepConfig(topicId, taskKey, apiConfig);
-            });
-            await Promise.all(savePromises);
+                    // Add legacy fields if they exist (backward compatibility)
+                    if (uiConfig.assignmentType) assignmentConfig.type = uiConfig.assignmentType;
+                    if (uiConfig.role) assignmentConfig.role = uiConfig.role;
+                    if (uiConfig.scope) assignmentConfig.scope = uiConfig.scope;
+                    if (uiConfig.group) assignmentConfig.groupCode = uiConfig.group;
+                    if (uiConfig.department) assignmentConfig.department = uiConfig.department;
+                    if (uiConfig.groupApproval) assignmentConfig.groupApproval = uiConfig.groupApproval;
+
+                    const apiConfig = {
+                        taskName: allSteps.find(s => s.taskKey === taskKey)?.taskName || taskKey,
+                        assignmentConfig,
+                        slaConfig: uiConfig.duration ? { duration: uiConfig.duration } : {},
+                        escalationConfig: uiConfig.escalationAction ? {
+                            escalations: [{
+                                level: 1,
+                                after: uiConfig.duration,
+                                action: uiConfig.escalationAction
+                            }]
+                        } : {},
+                        viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {}
+                    };
+
+                    console.log('Saving step config to workflow-service for', taskKey, ':', JSON.stringify(apiConfig, null, 2));
+
+                    // Use NEW workflow-service endpoint with processTemplateId
+                    return WorkflowConfigApi.saveTaskConfig(processTemplateId, taskKey, apiConfig);
+                });
+                await Promise.all(savePromises);
+                console.log('✅ Step configs saved to workflow-service');
+            } else {
+                console.warn('⚠️ No processTemplateId - step configs not saved to workflow-service');
+            }
 
             // Save memo-wide viewers
             if (memoWideViewers && memoWideViewers.length > 0) {
                 await MemoApi.updateTopicViewers(topicId, { viewers: memoWideViewers });
                 console.log('Memo-wide viewers saved');
             }
-
-            // Now deploy the workflow to Flowable
-            const deployResult = await MemoApi.deployTopicWorkflow(topicId);
-
-            // Refresh topic data to get the new workflowTemplateId
-            const updatedTopic = await MemoApi.getTopic(topicId);
-            setTopic(updatedTopic);
 
             toast.success('Workflow deployed successfully! Ready to use.');
         } catch (error) {

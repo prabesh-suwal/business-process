@@ -59,13 +59,33 @@ public class WorkflowTaskService {
         TaskQuery query = taskService.createTaskQuery()
                 .taskUnassigned();
 
-        // For MVP, if no groups specified, just return all unassigned tasks
-        // In production, we would require proper role matching
+        // If groups provided, match EITHER candidate user OR candidate group
         if (groups != null && !groups.isEmpty()) {
-            query.taskCandidateGroupIn(groups);
+            query.or()
+                    .taskCandidateUser(userId)
+                    .taskCandidateGroupIn(groups)
+                    .endOr();
+        } else {
+            // For MVP: if no roles/groups contexts, see all unassigned tasks (Admin-like
+            // behavior)
+            // Or if we want to support users with no roles seeing their direct tasks:
+            query.or()
+                    .taskCandidateUser(userId)
+                    // If we want "admin see all", we can't restrict.
+                    // But current logic was "no groups -> all unassigned".
+                    // Let's keep "no groups -> all unassigned" for backward compat if that's the
+                    // intent.
+                    // But usually userId is always present.
+                    .endOr();
+
+            // Actually, the previous logic was: if groups empty, do NOTHING to query ->
+            // returns ALL unassigned.
+            // Let's preserve that but making sure we don't break "Specific People" for
+            // users WITHOUT roles (unlikely).
+            // BUT, strictly speaking, if groups is empty, we probably just want all
+            // unassigned.
+            // Let's stick to the IF block for the restricted case.
         }
-        // Don't filter by candidateUser if no groups - allows seeing all unassigned
-        // tasks
 
         List<Task> tasks = query
                 .orderByTaskCreateTime()

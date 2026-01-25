@@ -124,9 +124,9 @@ public class WorkflowClient {
 
         /**
          * Deploy BPMN XML to Flowable engine.
-         * Returns the process definition ID (template ID) from the deployment.
+         * Returns both the Flowable process definition ID and ProcessTemplate UUID.
          */
-        public String deployBpmn(String processKey, String processName, String bpmnXml) {
+        public BpmnDeployResult deployBpmn(String processKey, String processName, String bpmnXml) {
                 log.info("Deploying BPMN for process: {} ({})", processName, processKey);
 
                 Map<String, Object> request = Map.of(
@@ -144,9 +144,22 @@ public class WorkflowClient {
                                 .block();
 
                 if (response != null && response.get("processDefinitionId") != null) {
-                        return response.get("processDefinitionId").toString();
+                        return new BpmnDeployResult(
+                                        response.get("processDefinitionId").toString(),
+                                        response.get("processTemplateId") != null
+                                                        ? response.get("processTemplateId").toString()
+                                                        : null);
                 }
                 throw new RuntimeException("Failed to deploy BPMN - no process definition ID returned");
+        }
+
+        /**
+         * Result of BPMN deployment.
+         */
+        public record BpmnDeployResult(
+                        String processDefinitionId, // Flowable ID for starting instances
+                        String processTemplateId // Our UUID for config lookup
+        ) {
         }
 
         /**

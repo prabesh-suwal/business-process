@@ -107,12 +107,35 @@ public class TaskConfiguration {
     @Column(name = "sla_breach_notification_code")
     private String slaBreachNotificationCode;
 
-    // === ASSIGNMENT OVERRIDE ===
-
     // Override default assignment (JSON structure)
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "assignment_config", columnDefinition = "jsonb")
     private Map<String, Object> assignmentConfig;
+
+    // === VIEWER CONFIG (who can view tasks at this step) ===
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "viewer_config", columnDefinition = "jsonb")
+    private Map<String, Object> viewerConfig;
+
+    // === FORM CONFIG (form behavior at this step) ===
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "form_config", columnDefinition = "jsonb")
+    private Map<String, Object> formConfig;
+
+    // === ESCALATION CONFIG (multi-level escalation rules) ===
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "escalation_config", columnDefinition = "jsonb")
+    private Map<String, Object> escalationConfig;
+
+    // Step order for display
+    @Column(name = "step_order")
+    @Builder.Default
+    private Integer stepOrder = 0;
+
+    // Active flag for soft delete
+    @Column(name = "active")
+    @Builder.Default
+    private Boolean active = true;
 
     // === ADDITIONAL CONFIG ===
 

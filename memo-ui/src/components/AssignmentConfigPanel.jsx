@@ -127,8 +127,8 @@ const AssignmentConfigPanel = ({
             return dept ? dept.name : value;
         }
         if (type === 'user') {
-            const user = users.find(u => u.userId === value);
-            return user ? user.username || user.email : value;
+            const user = users.find(u => (u.id || u.userId) === value);
+            return user ? user.label || user.username || user.code : value;
         }
         return value;
     };
@@ -338,18 +338,18 @@ const AssignmentConfigPanel = ({
 
                     {userDropdownOpen && (
                         <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                            {users.map(user => (
+                            {users.map((user, idx) => (
                                 <button
-                                    key={user.userId}
+                                    key={user.id || user.userId || user.code || idx}
                                     type="button"
-                                    onClick={() => toggleUser(user.userId)}
+                                    onClick={() => toggleUser(user.id || user.userId)}
                                     className="w-full flex items-center justify-between p-3 hover:bg-purple-50 transition-colors text-left"
                                 >
                                     <div className="flex flex-col">
-                                        <span className="text-sm font-medium">{user.username}</span>
-                                        <span className="text-xs text-gray-500">{user.email}</span>
+                                        <span className="text-sm font-medium">{user.label || user.username || user.code}</span>
+                                        <span className="text-xs text-gray-500">{user.code || user.email}</span>
                                     </div>
-                                    {selectedUsers.includes(user.userId) && (
+                                    {selectedUsers.includes(user.id || user.userId) && (
                                         <Check className="w-4 h-4 text-purple-600" />
                                     )}
                                 </button>

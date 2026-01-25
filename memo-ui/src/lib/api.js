@@ -176,13 +176,22 @@ export const CasAdminApi = {
 };
 
 /**
- * Workflow Config API - Per-step configuration for memo topics.
+ * Workflow Config API - Per-step configuration.
+ * Now routes to workflow-service for centralized task configuration.
+ * 
+ * NOTE: processTemplateId is stored in topic.workflowTemplateId after deployment.
  */
 export const WorkflowConfigApi = {
-    // Step configurations
+    // Step configurations - uses processTemplateId (not topicId)
+    // Legacy endpoints (memo-service) - still work but deprecated
     getStepConfigs: (topicId) => api.get(`/memo-admin/topics/${topicId}/workflow-config/steps`).then(res => res.data),
     getStepConfig: (topicId, taskKey) => api.get(`/memo-admin/topics/${topicId}/workflow-config/steps/${taskKey}`).then(res => res.data),
     saveStepConfig: (topicId, taskKey, config) => api.put(`/memo-admin/topics/${topicId}/workflow-config/steps/${taskKey}`, config).then(res => res.data),
+
+    // NEW: Direct to workflow-service using processTemplateId
+    getTaskConfigs: (processTemplateId) => api.get(`/workflow/api/process-templates/${processTemplateId}/task-configs`).then(res => res.data),
+    getTaskConfig: (processTemplateId, taskKey) => api.get(`/workflow/api/process-templates/${processTemplateId}/task-configs/${taskKey}`).then(res => res.data),
+    saveTaskConfig: (processTemplateId, taskKey, config) => api.put(`/workflow/api/process-templates/${processTemplateId}/task-configs/${taskKey}`, config).then(res => res.data),
 
     // Gateway decision rules
     getGatewayRules: (topicId) => api.get(`/memo-admin/topics/${topicId}/workflow-config/gateways`).then(res => res.data),

@@ -21,6 +21,7 @@ import java.util.UUID;
 public class ProcessTemplateController {
 
     private final ProcessDesignService processDesignService;
+    private final com.enterprise.workflow.service.TaskConfigurationService taskConfigurationService;
 
     /**
      * Create a new process template (DRAFT status).
@@ -92,9 +93,8 @@ public class ProcessTemplateController {
 
     /**
      * Deploy raw BPMN XML directly to Flowable.
-     * Used by memo-service to deploy topic workflows without going through template
-     * management.
-     * Returns the Flowable process definition ID.
+     * Used by memo-service to deploy topic workflows.
+     * Returns both the Flowable process definition ID AND our ProcessTemplate UUID.
      */
     @PostMapping("/deploy-bpmn")
     public ResponseEntity<java.util.Map<String, Object>> deployBpmn(
@@ -110,10 +110,13 @@ public class ProcessTemplateController {
                     "error", "processKey and bpmnXml are required"));
         }
 
-        String processDefinitionId = processDesignService.deployRawBpmn(processKey, processName, bpmnXml);
+        BpmnDeploymentResult result = processDesignService.deployRawBpmn(processKey, processName, bpmnXml);
 
         return ResponseEntity.ok(java.util.Map.of(
-                "processDefinitionId", processDefinitionId,
+                "processDefinitionId", result.getProcessDefinitionId(),
+                "processTemplateId", result.getProcessTemplateId().toString(),
+                "deploymentId", result.getDeploymentId(),
+                "processKey", result.getProcessKey(),
                 "message", "Workflow deployed successfully"));
     }
 
@@ -199,5 +202,63 @@ public class ProcessTemplateController {
 
         processDesignService.detachForm(id, taskKey);
         return ResponseEntity.noContent().build();
+    }
+
+    // ==================== Task Configuration Endpoints ====================
+
+    /**
+     * Get all task configurations for a process template.
+     */
+    @GetMapping("/{id}/task-configs")
+    public ResponseEntity<List<com.enterprise.workflow.dto.TaskConfigurationDTO>> getTaskConfigs(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(taskConfigurationService.getTaskConfigs(id));
+    }
+
+    /**
+     * Get a specific task configuration by task key.
+     */
+    @GetMapping("/{id}/task-configs/{taskKey}")
+    public ResponseEntity<com.enterprise.workflow.dto.TaskConfigurationDTO> getTaskConfig(
+            @PathVariable UUID id,
+            @PathVariable String taskKey) {
+        try {
+            return ResponseEntity.ok(taskConfigurationService.getTaskConfig(id, taskKey));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Create or update a task configuration.
+     */
+    @PutMapping("/{id}/task-configs/{taskKey}")
+    public ResponseEntity<com.enterprise.workflow.dto.TaskConfigurationDTO> saveTaskConfig(
+            @PathVariable UUID id,
+            @PathVariable String taskKey,
+            @RequestBody com.enterprise.workflow.dto.TaskConfigurationDTO config) {
+
+        // Ensure taskKey matches the path
+        config.setTaskKey(taskKey);
+        config.setProcessTemplateId(id);
+
+        return ResponseEntity.ok(taskConfigurationService.saveTaskConfig(id, config));
+    }
+
+    /**
+     * Delete a task configuration.
+     */
+    @DeleteMapping("/{id}/task-configs/{taskKey}")
+    public ResponseEntity<Void> deleteTaskConfig(
+            @PathVariable UUID id,
+            @PathVariable String taskKey) {
+
+        try {
+            var config = taskConfigurationService.getTaskConfig(id, taskKey);
+            taskConfigurationService.deleteTaskConfig(config.getId());
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 }

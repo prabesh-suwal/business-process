@@ -45,6 +45,26 @@ public class AdminService {
         return toPageDto(page.map(this::toUserDto));
     }
 
+    /**
+     * Get all active users who have at least one role for the specified product.
+     * Used for user-specific assignment dropdowns in workflow configuration.
+     */
+    @Transactional(readOnly = true)
+    public List<UserDto> listUsersByProduct(String productCode) {
+        // Get all users with active roles for this product
+        List<User> users = userRepository.findByStatus(User.UserStatus.ACTIVE);
+
+        // Filter to only users who have at least one role for this product
+        List<UserDto> result = users.stream()
+                .filter(u -> u.getUserRoles().stream()
+                        .anyMatch(ur -> ur.getRole().getProduct().getCode().equals(productCode)))
+                .map(this::toUserDto)
+                .collect(Collectors.toList());
+
+        log.debug("Found {} users with roles for product {}", result.size(), productCode);
+        return result;
+    }
+
     @Transactional(readOnly = true)
     public UserDto getUser(UUID id) {
         User user = userRepository.findById(id)

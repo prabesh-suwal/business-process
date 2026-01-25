@@ -57,6 +57,11 @@ public class TaskConfigurationService {
         config.setSlaWarningNotificationCode(dto.getSlaWarningNotificationCode());
         config.setSlaBreachNotificationCode(dto.getSlaBreachNotificationCode());
         config.setAssignmentConfig(dto.getAssignmentConfig());
+        config.setViewerConfig(dto.getViewerConfig());
+        config.setFormConfig(dto.getFormConfig());
+        config.setEscalationConfig(dto.getEscalationConfig());
+        config.setStepOrder(dto.getStepOrder());
+        config.setActive(dto.getActive() != null ? dto.getActive() : true);
         config.setConfig(dto.getConfig());
 
         config = taskConfigRepository.save(config);
@@ -129,6 +134,11 @@ public class TaskConfigurationService {
                 .slaWarningNotificationCode(config.getSlaWarningNotificationCode())
                 .slaBreachNotificationCode(config.getSlaBreachNotificationCode())
                 .assignmentConfig(config.getAssignmentConfig())
+                .viewerConfig(config.getViewerConfig())
+                .formConfig(config.getFormConfig())
+                .escalationConfig(config.getEscalationConfig())
+                .stepOrder(config.getStepOrder())
+                .active(config.getActive())
                 .config(config.getConfig())
                 .build();
     }

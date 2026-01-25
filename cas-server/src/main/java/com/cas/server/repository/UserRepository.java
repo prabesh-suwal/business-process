@@ -32,6 +32,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Page<User> findByStatus(User.UserStatus status, Pageable pageable);
 
+    java.util.List<User> findByStatus(User.UserStatus status);
+
     @Query("SELECT u FROM User u WHERE LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%'))")
     Page<User> searchByUsernameOrEmail(String search, Pageable pageable);
 

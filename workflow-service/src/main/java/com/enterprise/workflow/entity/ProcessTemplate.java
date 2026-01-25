@@ -38,6 +38,10 @@ public class ProcessTemplate {
     @Column(name = "product_id", nullable = false)
     private UUID productId;
 
+    // Product code for easy identification (MMS, LMS, etc.)
+    @Column(name = "product_code", length = 20)
+    private String productCode;
+
     @Column(nullable = false)
     private String name;
 

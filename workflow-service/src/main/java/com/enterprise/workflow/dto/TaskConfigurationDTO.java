@@ -46,6 +46,21 @@ public class TaskConfigurationDTO {
     // Assignment override
     private Map<String, Object> assignmentConfig;
 
+    // Viewer config (who can view tasks at this step)
+    private Map<String, Object> viewerConfig;
+
+    // Form config (form behavior at this step)
+    private Map<String, Object> formConfig;
+
+    // Escalation config (multi-level escalation rules)
+    private Map<String, Object> escalationConfig;
+
+    // Step order for display
+    private Integer stepOrder;
+
+    // Active flag
+    private Boolean active;
+
     // Additional config
     private Map<String, Object> config;
 }

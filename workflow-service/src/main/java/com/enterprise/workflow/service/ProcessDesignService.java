@@ -130,10 +130,10 @@ public class ProcessDesignService {
 
         /**
          * Deploy raw BPMN XML directly to Flowable engine.
-         * This bypasses template management and is used for topic-specific workflows.
-         * Returns the Flowable process definition ID.
+         * Also creates a ProcessTemplate record for centralized management.
+         * Returns both the Flowable process definition ID and our ProcessTemplate UUID.
          */
-        public String deployRawBpmn(String processKey, String processName, String bpmnXml) {
+        public BpmnDeploymentResult deployRawBpmn(String processKey, String processName, String bpmnXml) {
                 if (bpmnXml == null || bpmnXml.isBlank()) {
                         throw new IllegalArgumentException("BPMN XML is required");
                 }
@@ -162,9 +162,31 @@ public class ProcessDesignService {
                 log.info("Deployed raw BPMN successfully. Deployment ID: {}, Process Definition: {} ({})",
                                 deployment.getId(), processDefinition.getKey(), processDefinition.getId());
 
-                // Return the process definition ID (this is what memo-service needs to start
-                // instances)
-                return processDefinition.getId();
+                // Also create/update ProcessTemplate record for centralized management
+                ProcessTemplate template = processTemplateRepository
+                                .findByFlowableProcessDefKey(processDefinition.getKey())
+                                .orElse(ProcessTemplate.builder()
+                                                .name(processName != null ? processName : normalizedKey)
+                                                .productCode("MMS") // Default to MMS for memo workflows
+                                                .version(1)
+                                                .status(ProcessTemplate.ProcessTemplateStatus.ACTIVE)
+                                                .build());
+
+                template.setFlowableProcessDefKey(processDefinition.getKey());
+                template.setFlowableDeploymentId(deployment.getId());
+                template.setBpmnXml(bpmnXml);
+                template.setStatus(ProcessTemplate.ProcessTemplateStatus.ACTIVE);
+                template = processTemplateRepository.save(template);
+
+                log.info("Created/Updated ProcessTemplate: {} for workflow {}", template.getId(), processName);
+
+                // Return both IDs
+                return BpmnDeploymentResult.builder()
+                                .processDefinitionId(processDefinition.getId())
+                                .processTemplateId(template.getId())
+                                .deploymentId(deployment.getId())
+                                .processKey(processDefinition.getKey())
+                                .build();
         }
 
         /**

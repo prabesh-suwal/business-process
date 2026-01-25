@@ -1,5 +1,7 @@
 package com.enterprise.workflow.listener;
 
+import com.enterprise.workflow.service.AssignmentResolverService;
+import com.enterprise.workflow.service.AssignmentResolverService.AssignmentResult;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.flowable.engine.delegate.TaskListener;
@@ -12,88 +14,163 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.util.*;
 
 /**
- * Flowable Task Listener that notifies memo-service when a task is created.
+ * Flowable Task Listener that:
+ * 1. Resolves assignment using LOCAL AssignmentResolverService (centralized)
+ * 2. Notifies product-service (memo-service, lms-service) via webhook for
+ * business records
  * 
- * Workflow-service does NOT decide assignments - it delegates to memo-service
- * via webhook, keeping this service as a pure Flowable engine.
+ * Assignment is now FULLY CENTRALIZED in workflow-service.
+ * Product services only handle business records (MemoTask, etc.).
  */
 @Component("assignmentTaskListener")
 @Slf4j
 public class AssignmentTaskListener implements TaskListener {
 
     private final WebClient.Builder webClientBuilder;
+    private final AssignmentResolverService assignmentResolver;
 
     @Value("${memo.service.url:http://localhost:9008}")
     private String memoServiceUrl;
 
-    public AssignmentTaskListener(WebClient.Builder webClientBuilder) {
+    public AssignmentTaskListener(WebClient.Builder webClientBuilder,
+            AssignmentResolverService assignmentResolver) {
         this.webClientBuilder = webClientBuilder;
+        this.assignmentResolver = assignmentResolver;
     }
 
     @Override
     public void notify(DelegateTask delegateTask) {
         String taskKey = delegateTask.getTaskDefinitionKey();
         String taskName = delegateTask.getName();
-        String taskId = delegateTask.getId();
+        String processInstanceId = delegateTask.getProcessInstanceId();
+        Map<String, Object> variables = delegateTask.getVariables();
 
-        log.info("Task created: {} ({}) - notifying memo-service", taskName, taskKey);
+        log.info("Task created: {} ({}) in process {}", taskName, taskKey, processInstanceId);
+
+        // Get processTemplateId from variables (set when process was started)
+        UUID processTemplateId = getProcessTemplateId(variables);
+        log.info("ProcessTemplateId from variables: {}", processTemplateId);
+
+        // Step 1: Resolve assignment LOCALLY using centralized service
+        AssignmentResult assignment = null;
+        if (processTemplateId != null) {
+            try {
+                assignment = assignmentResolver.resolveAssignment(
+                        processTemplateId, taskKey, variables);
+                log.info("Assignment resolved for task {}: groups={}, users={}",
+                        taskKey, assignment.getCandidateGroups(), assignment.getCandidateUsers());
+            } catch (Exception e) {
+                log.warn("Local assignment resolution failed for task {}: {}", taskKey, e.getMessage());
+            }
+        } else {
+            log.warn("No processTemplateId found in variables, keys: {}", variables.keySet());
+        }
+
+        // Apply assignment to Flowable task
+        if (assignment != null) {
+            applyAssignment(delegateTask, assignment);
+            log.info("Applied assignment for task {}: {}", taskKey, assignment.getDescription());
+        }
+
+        // Step 2: Notify product-service for business records ONLY
+        // Assignment is already done - product service just creates MemoTask/LoanTask
+        notifyProductService(delegateTask, assignment);
+    }
+
+    /**
+     * Apply assignment from resolver result to Flowable task.
+     */
+    private void applyAssignment(DelegateTask task, AssignmentResult assignment) {
+        if (assignment.getAssignee() != null && !assignment.getAssignee().isBlank()) {
+            task.setAssignee(assignment.getAssignee());
+        }
+
+        if (assignment.getCandidateUsers() != null) {
+            for (String user : assignment.getCandidateUsers()) {
+                task.addCandidateUser(user);
+            }
+        }
+
+        if (assignment.getCandidateGroups() != null) {
+            for (String group : assignment.getCandidateGroups()) {
+                task.addCandidateGroup(group);
+            }
+        }
+    }
+
+    /**
+     * Notify product-service to create business records.
+     * Assignment is already resolved - we pass it for logging/storage.
+     */
+    private void notifyProductService(DelegateTask delegateTask, AssignmentResult assignment) {
+        Map<String, Object> variables = delegateTask.getVariables();
+        Object memoIdObj = variables.get("memoId");
+        Object loanIdObj = variables.get("loanId");
+
+        if (memoIdObj != null) {
+            notifyMemoService(delegateTask, assignment);
+        } else if (loanIdObj != null) {
+            log.info("LMS task created - lms-service webhook not yet implemented");
+        } else {
+            log.debug("No product ID (memoId/loanId) found in variables");
+        }
+    }
+
+    /**
+     * Notify memo-service to create MemoTask record.
+     */
+    private void notifyMemoService(DelegateTask delegateTask, AssignmentResult assignment) {
+        String taskKey = delegateTask.getTaskDefinitionKey();
 
         try {
-            // Get memoId from process variables
-            Object memoIdObj = delegateTask.getVariable("memoId");
-            if (memoIdObj == null) {
-                log.warn("No memoId found in process variables, skipping webhook");
-                return;
-            }
+            UUID memoId = UUID.fromString(delegateTask.getVariable("memoId").toString());
 
-            UUID memoId = UUID.fromString(memoIdObj.toString());
-
-            // Build webhook request
             TaskCreatedEvent event = new TaskCreatedEvent();
-            event.setTaskId(taskId);
+            event.setTaskId(delegateTask.getId());
             event.setMemoId(memoId);
             event.setTaskDefinitionKey(taskKey);
-            event.setTaskName(taskName);
+            event.setTaskName(delegateTask.getName());
             event.setProcessInstanceId(delegateTask.getProcessInstanceId());
-            event.setProcessVariables(delegateTask.getVariables());
 
-            // Call memo-service webhook
-            TaskCreatedResponse response = webClientBuilder.build()
+            // Pass resolved assignment to memo-service (for MemoTask record)
+            if (assignment != null) {
+                event.setCandidateGroups(assignment.getCandidateGroups());
+                event.setCandidateUsers(assignment.getCandidateUsers());
+            }
+
+            // Fire-and-forget notification (don't block on response)
+            webClientBuilder.build()
                     .post()
                     .uri(memoServiceUrl + "/api/workflow-webhook/task-created")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(event)
                     .retrieve()
-                    .bodyToMono(TaskCreatedResponse.class)
-                    .block();
-
-            if (response != null) {
-                // Apply assignment from memo-service
-                applyAssignment(delegateTask, response);
-                log.info("Applied assignment from memo-service for task {}", taskKey);
-            }
+                    .bodyToMono(Void.class)
+                    .subscribe(
+                            result -> log.info("Memo-service notified for task {}", taskKey),
+                            error -> log.error("Failed to notify memo-service: {}", error.getMessage()));
 
         } catch (Exception e) {
-            log.error("Error calling memo-service webhook for task {}: {}", taskKey, e.getMessage());
-            // Don't throw - let the task be created without assignment
+            log.error("Error preparing memo-service notification for task {}: {}", taskKey, e.getMessage());
         }
     }
 
-    private void applyAssignment(DelegateTask task, TaskCreatedResponse response) {
-        if (response.getAssignee() != null && !response.getAssignee().isBlank()) {
-            task.setAssignee(response.getAssignee());
-        }
+    /**
+     * Extract processTemplateId from workflow variables.
+     */
+    private UUID getProcessTemplateId(Map<String, Object> variables) {
+        Object value = variables.get("processTemplateId");
+        if (value == null)
+            return null;
 
-        if (response.getCandidateUsers() != null) {
-            for (String user : response.getCandidateUsers()) {
-                task.addCandidateUser(user);
+        try {
+            if (value instanceof UUID) {
+                return (UUID) value;
             }
-        }
-
-        if (response.getCandidateGroups() != null) {
-            for (String group : response.getCandidateGroups()) {
-                task.addCandidateGroup(group);
-            }
+            return UUID.fromString(value.toString());
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid processTemplateId format: {}", value);
+            return null;
         }
     }
 
@@ -104,15 +181,6 @@ public class AssignmentTaskListener implements TaskListener {
         private String taskDefinitionKey;
         private String taskName;
         private String processInstanceId;
-        private List<String> candidateGroups;
-        private List<String> candidateUsers;
-        private Map<String, Object> processVariables;
-    }
-
-    @Data
-    public static class TaskCreatedResponse {
-        private UUID memoTaskId;
-        private String assignee;
         private List<String> candidateGroups;
         private List<String> candidateUsers;
     }

@@ -49,6 +49,16 @@ public class ProcessRuntimeService {
                         // It's a direct Flowable process definition ID
                         flowableProcessDefKey = processTemplateId;
                         log.info("Starting process directly by definition ID: {}", flowableProcessDefKey);
+
+                        // Try to find ProcessTemplate by flowableProcessDefKey for centralized
+                        // assignment
+                        String processKey = processTemplateId.split(":")[0]; // Extract key from "key:version:id"
+                        template = processTemplateRepository.findByFlowableProcessDefKey(processKey)
+                                        .orElse(null);
+                        if (template != null) {
+                                log.info("Found ProcessTemplate {} for Flowable process key {}", template.getId(),
+                                                processKey);
+                        }
                 } else {
                         // Try to parse as UUID and look up ProcessTemplate
                         try {
@@ -69,6 +79,7 @@ public class ProcessRuntimeService {
                                         throw new IllegalStateException("Template has not been deployed to Flowable");
                                 }
                                 flowableProcessDefKey = template.getFlowableProcessDefKey();
+                                log.info("Starting process from ProcessTemplate {}", template.getId());
                         } catch (IllegalArgumentException e) {
                                 // Not a valid UUID, treat as Flowable process key
                                 flowableProcessDefKey = processTemplateId;
@@ -83,6 +94,12 @@ public class ProcessRuntimeService {
                 // Merge with request variables (Request overrides Global)
                 if (request.getVariables() != null) {
                         finalVariables.putAll(request.getVariables());
+                }
+
+                // Add processTemplateId to variables for AssignmentTaskListener to use
+                if (template != null) {
+                        finalVariables.put("processTemplateId", template.getId().toString());
+                        finalVariables.put("productCode", template.getProductCode());
                 }
 
                 // Start Flowable process instance
