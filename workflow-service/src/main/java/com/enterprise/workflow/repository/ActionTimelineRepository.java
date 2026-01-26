@@ -12,13 +12,15 @@ import java.util.UUID;
 @Repository
 public interface ActionTimelineRepository extends JpaRepository<ActionTimeline, UUID> {
 
-    List<ActionTimeline> findByProcessInstanceIdOrderByCreatedAtAsc(String processInstanceId);
+        List<ActionTimeline> findByProcessInstanceIdOrderByCreatedAtAsc(String processInstanceId);
 
-    Page<ActionTimeline> findByProcessInstanceIdOrderByCreatedAtDesc(
-            String processInstanceId, Pageable pageable);
+        Page<ActionTimeline> findByProcessInstanceIdOrderByCreatedAtDesc(
+                        String processInstanceId, Pageable pageable);
 
-    List<ActionTimeline> findByActorIdOrderByCreatedAtDesc(UUID actorId);
+        List<ActionTimeline> findByProcessInstanceIdOrderByCreatedAtDesc(String processInstanceId);
 
-    List<ActionTimeline> findByProcessInstanceIdAndActionTypeOrderByCreatedAtAsc(
-            String processInstanceId, ActionTimeline.ActionType actionType);
+        List<ActionTimeline> findByActorIdOrderByCreatedAtDesc(UUID actorId);
+
+        List<ActionTimeline> findByProcessInstanceIdAndActionTypeOrderByCreatedAtAsc(
+                        String processInstanceId, ActionTimeline.ActionType actionType);
 }

@@ -137,6 +137,16 @@ export const TaskApi = {
     // Committee voting (still through workflow for now, TODO: move to memo)
     castVote: (taskId, decision, comment) => api.post(`/workflow/api/tasks/${taskId}/vote`, { decision, comment }).then(res => res.data),
     getVoteStatus: (taskId) => api.get(`/workflow/api/tasks/${taskId}/vote-status`).then(res => res.data),
+
+    // Send Back / Reject
+    getReturnPoints: (taskId) => api.get(`/memo/api/tasks/${taskId}/return-points`).then(res => res.data),
+    sendBackTask: (taskId, targetActivityId, reason) => api.post(`/memo/api/tasks/${taskId}/send-back`, { targetActivityId, reason }).then(res => res.data),
+};
+
+export const HistoryApi = {
+    getTimeline: (processInstanceId) => api.get(`/workflow/api/history/timeline/${processInstanceId}`).then(res => res.data),
+    getTimelineByType: (processInstanceId, type) => api.get(`/workflow/api/history/timeline/${processInstanceId}/by-type?actionType=${type}`).then(res => res.data),
+    getVariableHistory: (processInstanceId) => api.get(`/workflow/api/history/variables/${processInstanceId}`).then(res => res.data),
 };
 
 /**

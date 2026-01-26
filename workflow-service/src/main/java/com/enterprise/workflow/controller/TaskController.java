@@ -98,6 +98,29 @@ public class TaskController {
     }
 
     /**
+     * Get valid return points for a task.
+     */
+    @GetMapping("/{taskId}/return-points")
+    public ResponseEntity<List<org.flowable.task.api.history.HistoricTaskInstance>> getReturnPoints(
+            @PathVariable String taskId) {
+        return ResponseEntity.ok(taskService.getReturnableTasks(taskId));
+    }
+
+    /**
+     * Send back (reject) a task.
+     */
+    @PostMapping("/{taskId}/send-back")
+    public ResponseEntity<Void> sendBackTask(
+            @PathVariable String taskId,
+            @RequestBody SendBackRequest request,
+            @RequestHeader(value = "X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Name", defaultValue = "Unknown") String userName) {
+
+        taskService.sendBackTask(taskId, request.getTargetActivityId(), request.getReason(), userId, userName);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
      * Get a specific task by ID.
      */
     @GetMapping("/{id}")

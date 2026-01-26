@@ -29,6 +29,8 @@ import java.util.UUID;
 public class WorkflowTaskService {
 
     private final TaskService taskService;
+    private final org.flowable.engine.RuntimeService runtimeService;
+    private final org.flowable.engine.HistoryService historyService;
     private final ProcessInstanceMetadataRepository processInstanceMetadataRepository;
     private final ProcessTemplateFormRepository processTemplateFormRepository;
     private final ActionTimelineRepository actionTimelineRepository;
@@ -300,6 +302,72 @@ public class WorkflowTaskService {
     public void setTaskPriority(String taskId, int priority) {
         taskService.setPriority(taskId, priority);
         log.debug("Set priority {} on task {}", priority, taskId);
+    }
+
+    /**
+     * Get valid return points (previous user tasks) for a task.
+     */
+    @Transactional(readOnly = true)
+    public List<org.flowable.task.api.history.HistoricTaskInstance> getReturnableTasks(String taskId) {
+        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        // Get completed user tasks in this process
+        return historyService.createHistoricTaskInstanceQuery()
+                .processInstanceId(task.getProcessInstanceId())
+                .finished()
+                .orderByHistoricTaskInstanceEndTime().desc()
+                .list();
+    }
+
+    /**
+     * Send back (reject) a task to a previous activity or start node.
+     */
+    public void sendBackTask(String taskId, String targetActivityId, String reason, String userId, String userName) {
+        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        String currentActivityId = task.getTaskDefinitionKey();
+        log.info("Sending back task {} from {} to {}", taskId, currentActivityId, targetActivityId);
+
+        // 1. Move token using Change Activity State
+        runtimeService.createChangeActivityStateBuilder()
+                .processInstanceId(task.getProcessInstanceId())
+                .moveActivityIdTo(currentActivityId, targetActivityId)
+                .changeState();
+
+        // 2. Set variables for context
+        taskService.setVariable(taskId, "sendBackReason", reason);
+        taskService.setVariable(taskId, "sendBackFrom", currentActivityId);
+        taskService.setVariable(taskId, "sendBackTo", targetActivityId);
+        taskService.setVariable(taskId, "isSendBack", true);
+
+        // 3. Record in timeline
+        ActionTimeline timelineEvent = ActionTimeline.builder()
+                .processInstanceId(task.getProcessInstanceId())
+                .actionType(ActionTimeline.ActionType.valueOf("TASK_SENT_BACK")) // Needs enum update
+                .taskId(taskId)
+                .taskName(task.getName())
+                .actorId(UUID.fromString(userId))
+                .actorName(userName)
+                .metadata(Map.of(
+                        "action", "sendBack",
+                        "targetActivityId", targetActivityId,
+                        "reason", reason))
+                .build();
+        actionTimelineRepository.save(timelineEvent);
+    }
+
+    /**
+     * Get full audit history for a process instance.
+     */
+    @Transactional(readOnly = true)
+    public List<ActionTimeline> getHistory(String processInstanceId) {
+        return actionTimelineRepository.findByProcessInstanceIdOrderByCreatedAtDesc(processInstanceId);
     }
 
     private TaskDTO toDTO(Task task) {

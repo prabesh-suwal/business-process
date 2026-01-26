@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import Form from '@rjsf/core';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import validator from '@rjsf/validator-ajv8';
+import AuditHistoryPanel from '../components/AuditHistoryPanel';
 
 export default function MemoEditor() {
     const { id } = useParams();
@@ -271,6 +272,13 @@ export default function MemoEditor() {
                                 <p>No dynamic form configured for this topic.</p>
                             </CardContent>
                         </Card>
+                    )}
+
+                    {/* Audit History */}
+                    {memo.processInstanceId && (
+                        <div className="animate-in slide-in-from-right duration-500 delay-200">
+                            <AuditHistoryPanel processInstanceId={memo.processInstanceId} />
+                        </div>
                     )}
                 </div>
             </div>

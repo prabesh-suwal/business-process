@@ -158,6 +158,9 @@ public class HistoryService {
             case COMMENT_ADDED -> actor + " added a comment";
             case INTEGRATION_CALLED -> "External integration was called";
             case NOTIFICATION_SENT -> "Notification was sent";
+            case TASK_SENT_BACK -> actor + " sent the task back";
+            case TASK_REJECTED -> actor + " rejected the task";
+            default -> "Action performed";
         };
     }
 }

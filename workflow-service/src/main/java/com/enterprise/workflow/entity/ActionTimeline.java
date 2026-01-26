@@ -80,6 +80,8 @@ public class ActionTimeline {
         DOCUMENT_UPLOADED,
         COMMENT_ADDED,
         INTEGRATION_CALLED,
-        NOTIFICATION_SENT
+        NOTIFICATION_SENT,
+        TASK_SENT_BACK,
+        TASK_REJECTED
     }
 }
