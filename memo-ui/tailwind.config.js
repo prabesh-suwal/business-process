@@ -17,12 +17,49 @@ export default {
             },
         },
         extend: {
+            fontFamily: {
+                sans: ['Inter', 'sans-serif'],
+            },
             colors: {
+                // Existing shadcn variables
                 border: "hsl(var(--border))",
                 input: "hsl(var(--input))",
                 ring: "hsl(var(--ring))",
                 background: "hsl(var(--background))",
                 foreground: "hsl(var(--foreground))",
+
+                // Corporate Banking Palette
+                brand: {
+                    navy: {
+                        DEFAULT: "#1A2B48", // Primary Brand
+                        light: "#2A3F63",
+                    },
+                    slate: {
+                        DEFAULT: "#64748B", // Secondary Text
+                        light: "#F8FAFC",   // Backgrounds (Lighter)
+                        accent: "#F1F5F9"
+                    },
+                    blue: {
+                        DEFAULT: "#2563EB", // Royal Blue
+                        hover: "#1D4ED8",
+                        light: "#EFF6FF"
+                    }
+                },
+                status: {
+                    green: {
+                        DEFAULT: "#10B981", // Approved
+                        light: "#D1FAE5",
+                    },
+                    amber: {
+                        DEFAULT: "#F59E0B", // Pending
+                        light: "#FEF3C7",
+                    },
+                    crimson: {
+                        DEFAULT: "#EF4444", // Rejected
+                        light: "#FEE2E2",
+                    }
+                },
+
                 primary: {
                     DEFAULT: "hsl(var(--primary))",
                     foreground: "hsl(var(--primary-foreground))",

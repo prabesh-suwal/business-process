@@ -73,7 +73,7 @@ const MenuBar = ({ editor }) => {
     );
 };
 
-export default function RichTextEditor({ content, onChange }) {
+export default function RichTextEditor({ content, onChange, outputFormat = 'html', ...props }) {
     const editor = useEditor({
         extensions: [
             StarterKit,
@@ -81,7 +81,11 @@ export default function RichTextEditor({ content, onChange }) {
         ],
         content: content,
         onUpdate: ({ editor }) => {
-            onChange(editor.getJSON());
+            if (outputFormat === 'json') {
+                onChange(editor.getJSON());
+            } else {
+                onChange(editor.getHTML());
+            }
         },
         editorProps: {
             attributes: {

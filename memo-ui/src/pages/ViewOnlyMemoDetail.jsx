@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { ArrowLeft, Eye, FileText, Calendar, User, Lock } from 'lucide-react';
+import { PageContainer } from '../components/PageContainer';
 
 /**
  * ViewOnlyMemoDetail - Read-only view of a memo
@@ -82,7 +83,7 @@ const ViewOnlyMemoDetail = () => {
     }
 
     return (
-        <div className="p-6 space-y-4 max-w-5xl mx-auto">
+        <PageContainer>
             {/* Header with back button and view-only banner */}
             <div className="flex items-center justify-between">
                 <Button
@@ -200,7 +201,7 @@ const ViewOnlyMemoDetail = () => {
                     </div>
                 </CardContent>
             </Card>
-        </div>
+        </PageContainer>
     );
 };
 

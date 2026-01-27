@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 import { Eye, FileText, Calendar, User } from 'lucide-react';
+import { PageContainer } from '../components/PageContainer';
 
 /**
  * ViewOnlyMemos - Display memos that user can view but not act on
@@ -64,8 +65,9 @@ const ViewOnlyMemos = () => {
         );
     }
 
+
     return (
-        <div className="p-6 space-y-4">
+        <PageContainer>
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">View-Only Memos</h1>
@@ -144,7 +146,7 @@ const ViewOnlyMemos = () => {
                     ))}
                 </div>
             )}
-        </div>
+        </PageContainer>
     );
 };
 

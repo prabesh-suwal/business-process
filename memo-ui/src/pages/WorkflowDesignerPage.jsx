@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import ViewerConfigPanel from '../components/ViewerConfigPanel';
 import AssignmentConfigPanel from '../components/AssignmentConfigPanel';
+import { PageContainer } from '../components/PageContainer';
 
 /**
  * WorkflowDesignerPage - Unified workflow design experience.
@@ -387,7 +388,7 @@ const WorkflowDesignerPage = () => {
     }
 
     return (
-        <div className="h-screen flex flex-col bg-gray-100">
+        <PageContainer className="h-screen flex flex-col bg-gray-100 space-y-0 p-0">
             {/* Top Header Bar */}
             <div className="bg-white border-b px-6 py-3 flex items-center justify-between shadow-sm">
                 <div className="flex items-center space-x-4">
@@ -562,7 +563,7 @@ const WorkflowDesignerPage = () => {
                     </div>
                 </div>
             </div>
-        </div>
+        </PageContainer>
     );
 };
 
