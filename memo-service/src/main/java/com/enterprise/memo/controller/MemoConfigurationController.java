@@ -86,4 +86,15 @@ public class MemoConfigurationController {
             @RequestBody java.util.Map<String, Object> viewerConfig) {
         return ResponseEntity.ok(configurationService.updateTopicViewers(topicId, viewerConfig));
     }
+
+    /**
+     * Update override permissions for a topic.
+     * Controls what users can customize when creating memos for this topic.
+     */
+    @PatchMapping("/topics/{topicId}/override-permissions")
+    public ResponseEntity<MemoTopic> updateTopicOverridePermissions(
+            @PathVariable java.util.UUID topicId,
+            @RequestBody java.util.Map<String, Object> overridePermissions) {
+        return ResponseEntity.ok(configurationService.updateTopicOverridePermissions(topicId, overridePermissions));
+    }
 }

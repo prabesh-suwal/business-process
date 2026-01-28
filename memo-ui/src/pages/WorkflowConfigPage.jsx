@@ -6,6 +6,8 @@ import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, Settings, Users, Clock, AlertTriangle, CheckCircle, FileText, Save, Eye } from 'lucide-react';
+import SearchableMultiSelect from '../components/ui/SearchableMultiSelect';
+
 
 /**
  * WorkflowConfigPage - Step-centric workflow configuration for business users.
@@ -501,19 +503,13 @@ const AssignmentTab = ({ config, onChange, assignmentTypes, roles, groups, depar
             {config.type === 'ROLE' && (
                 <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Select Role
-                        </label>
-                        <select
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            value={config.role || ''}
-                            onChange={(e) => onChange({ ...config, role: e.target.value })}
-                        >
-                            <option value="">Choose a role...</option>
-                            {roles.map((role) => (
-                                <option key={role.id} value={role.code}>{role.label}</option>
-                            ))}
-                        </select>
+                        <SearchableMultiSelect
+                            options={roles.map(r => ({ value: r.code, label: r.label }))}
+                            selected={config.roles || []}
+                            onChange={(selected) => onChange({ ...config, roles: selected })}
+                            placeholder="Select roles..."
+                            label="Select Roles"
+                        />
                     </div>
 
                     <div>
@@ -554,19 +550,13 @@ const AssignmentTab = ({ config, onChange, assignmentTypes, roles, groups, depar
             {config.type === 'GROUP' && (
                 <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Select Committee / Group
-                        </label>
-                        <select
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            value={config.groupCode || ''}
-                            onChange={(e) => onChange({ ...config, groupCode: e.target.value })}
-                        >
-                            <option value="">Choose a group...</option>
-                            {groups.map((group) => (
-                                <option key={group.id} value={group.code}>{group.label}</option>
-                            ))}
-                        </select>
+                        <SearchableMultiSelect
+                            options={groups.map(g => ({ value: g.code, label: g.label }))}
+                            selected={config.groupCodes || []}
+                            onChange={(selected) => onChange({ ...config, groupCodes: selected })}
+                            placeholder="Select groups..."
+                            label="Select Committee / Groups"
+                        />
                     </div>
 
                     <div>

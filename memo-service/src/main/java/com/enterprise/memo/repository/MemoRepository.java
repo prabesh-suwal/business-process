@@ -11,6 +11,8 @@ import java.util.UUID;
 public interface MemoRepository extends JpaRepository<Memo, UUID> {
     List<Memo> findByCreatedBy(UUID userId);
 
+    List<Memo> findByCreatedByOrderByCreatedAtDesc(UUID userId);
+
     List<Memo> findByTopicId(UUID topicId);
 
     // Helper to count memos for a topic in the current year for numbering sequence

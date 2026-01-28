@@ -69,6 +69,12 @@ public class Memo {
     @Column(name = "current_assignee")
     private String currentAssignee; // User ID or Role
 
+    // Custom workflow overrides (when user customizes workflow for this memo)
+    // Contains: {customWorkflow: true, steps: [...]}
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "workflow_overrides", columnDefinition = "jsonb")
+    private Map<String, Object> workflowOverrides;
+
     // Audit
     @Column(name = "created_by")
     private UUID createdBy; // User UUID

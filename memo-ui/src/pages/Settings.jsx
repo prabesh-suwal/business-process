@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Loader2, Plus, ArrowLeft, Settings as SettingsIcon, Workflow } from 'lucide-react';
+import { Loader2, Plus, ArrowLeft, Settings as SettingsIcon, Workflow, FolderOpen, FileText, Layers, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageContainer } from '../components/PageContainer';
 
@@ -32,33 +32,59 @@ export default function Settings() {
     }, []);
 
     return (
-        <PageContainer>
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-                    <p className="text-muted-foreground">Manage system configuration, categories, and topics.</p>
+        <PageContainer className="p-0">
+            {/* Premium Dark Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-8 py-6">
+                <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                        <SettingsIcon className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-white">System Settings</h1>
+                        <p className="text-slate-400 text-sm">Manage categories, topics, and workflow configurations</p>
+                    </div>
                 </div>
             </div>
 
-            <Tabs defaultValue="categories" className="space-y-4">
-                <TabsList>
-                    <TabsTrigger value="categories">Categories</TabsTrigger>
-                    <TabsTrigger value="topics">Topics</TabsTrigger>
-                    <TabsTrigger value="workflows">Workflows</TabsTrigger>
-                </TabsList>
+            <div className="p-6 md:p-8">
+                <Tabs defaultValue="categories" className="space-y-6">
+                    <TabsList className="bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
+                        <TabsTrigger
+                            value="categories"
+                            className="rounded-lg px-4 py-2 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
+                        >
+                            <FolderOpen className="w-4 h-4 mr-2" />
+                            Categories
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="topics"
+                            className="rounded-lg px-4 py-2 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
+                        >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Topics
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="workflows"
+                            className="rounded-lg px-4 py-2 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-sm transition-all"
+                        >
+                            <GitBranch className="w-4 h-4 mr-2" />
+                            Workflows
+                        </TabsTrigger>
+                    </TabsList>
 
-                <TabsContent value="categories" className="space-y-4">
-                    <CategoriesTab categories={categories} onRefresh={fetchCategories} />
-                </TabsContent>
+                    <TabsContent value="categories" className="space-y-4">
+                        <CategoriesTab categories={categories} onRefresh={fetchCategories} />
+                    </TabsContent>
 
-                <TabsContent value="topics" className="space-y-4">
-                    <TopicsTab categories={categories} />
-                </TabsContent>
+                    <TabsContent value="topics" className="space-y-4">
+                        <TopicsTab categories={categories} />
+                    </TabsContent>
 
-                <TabsContent value="workflows" className="space-y-4">
-                    <WorkflowsTab />
-                </TabsContent>
-            </Tabs>
+                    <TabsContent value="workflows" className="space-y-4">
+                        <WorkflowsTab />
+                    </TabsContent>
+                </Tabs>
+            </div>
         </PageContainer>
     );
 }

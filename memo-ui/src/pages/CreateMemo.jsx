@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MemoApi } from '../lib/api';
+import { MemoApi, CasAdminApi } from '../lib/api';
 import { PageContainer } from '../components/PageContainer';
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -8,7 +8,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import RichTextEditor from '../components/RichTextEditor';
 import MemoAttachments from '../components/MemoAttachments';
-import { Loader2, Save, Send } from 'lucide-react';
+import StepBuilder from '../components/StepBuilder';
+import WorkflowPreview from '../components/WorkflowPreview';
+import { Loader2, Save, Send, Workflow, FileText, Paperclip, Settings, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function CreateMemo() {
@@ -32,16 +34,48 @@ export default function CreateMemo() {
     // Created Memo
     const [memoId, setMemoId] = useState(null);
 
+    // Workflow/Step Builder State
+    const [selectedTopicDetails, setSelectedTopicDetails] = useState(null);
+    const [workflowSteps, setWorkflowSteps] = useState([]);
+    const [useCustomWorkflow, setUseCustomWorkflow] = useState(false);
+    const [stepOverrides, setStepOverrides] = useState({}); // Inline step overrides for WorkflowPreview
+
+    // Dropdown data for StepBuilder
+    const [roles, setRoles] = useState([]);
+    const [departments, setDepartments] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [slaDurations, setSlaDurations] = useState([
+        { code: 'PT1H', label: '1 Hour' },
+        { code: 'PT4H', label: '4 Hours' },
+        { code: 'P1D', label: '1 Day' },
+        { code: 'P2D', label: '2 Days' },
+        { code: 'P3D', label: '3 Days' },
+        { code: 'P5D', label: '5 Days' },
+        { code: 'P1W', label: '1 Week' }
+    ]);
+    const [escalationActions, setEscalationActions] = useState([
+        { code: 'NOTIFY_SUPERVISOR', label: 'Notify Supervisor' },
+        { code: 'AUTO_ESCALATE', label: 'Auto-Escalate' },
+        { code: 'SEND_REMINDER', label: 'Send Reminder' }
+    ]);
+
     // Fetch Categories on load
     useEffect(() => {
         setLoading(true);
-        MemoApi.getCategories()
-            .then(setCategories)
-            .catch(err => {
-                console.error(err);
-                toast.error("Failed to load categories");
-            })
-            .finally(() => setLoading(false));
+        Promise.all([
+            MemoApi.getCategories(),
+            CasAdminApi.getRoles().catch(() => []),
+            CasAdminApi.getDepartments().catch(() => []),
+            CasAdminApi.getUsers().catch(() => [])
+        ]).then(([cats, rolesData, deptsData, usersData]) => {
+            setCategories(cats);
+            setRoles(rolesData);
+            setDepartments(deptsData);
+            setUsers(usersData);
+        }).catch(err => {
+            console.error(err);
+            toast.error("Failed to load initial data");
+        }).finally(() => setLoading(false));
     }, []);
 
     // Fetch Topics when Category changes
@@ -57,6 +91,39 @@ export default function CreateMemo() {
             setTopics([]);
         }
     }, [selectedCategory]);
+
+    // Load Topic Details when Topic is selected (to check workflow & override permissions)
+    useEffect(() => {
+        if (selectedTopic) {
+            MemoApi.getTopic(selectedTopic)
+                .then(topicData => {
+                    setSelectedTopicDetails(topicData);
+
+                    // Check if topic has workflow configured
+                    const hasWorkflow = topicData.workflowXml && topicData.workflowXml.trim().length > 0;
+
+                    if (!hasWorkflow) {
+                        // General topic - user creates their own workflow
+                        setUseCustomWorkflow(true);
+                        setWorkflowSteps([]);
+                    } else {
+                        // Topic has workflow - user can override if permitted
+                        setUseCustomWorkflow(false);
+                        // Pre-load steps from topic workflow (simplified for now)
+                        // In full implementation, we'd extract steps from BPMN
+                        setWorkflowSteps([]);
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    setSelectedTopicDetails(null);
+                });
+        } else {
+            setSelectedTopicDetails(null);
+            setWorkflowSteps([]);
+            setUseCustomWorkflow(false);
+        }
+    }, [selectedTopic]);
 
     const handleSaveDraft = async () => {
         if (!selectedTopic) {
@@ -84,23 +151,41 @@ export default function CreateMemo() {
                 toast.success("Draft created successfully");
             }
 
-            // 2. Update Content & Metadata
-            // Assuming updateMemo accepts these fields. 
-            // If referenceNumber needs to go into formData, we might need to change structure.
-            // For now, sending flat.
-            await MemoApi.updateMemo(currentMemoId, {
+            // 2. Build update payload
+            const updatePayload = {
                 subject: title,
                 priority: priority,
-                content: content, // Rich text HTML
+                content: content,
                 referenceNumber: referenceNumber
-            });
+            };
+
+            // 3. Include workflow overrides if user customized
+            if (useCustomWorkflow && workflowSteps.length > 0) {
+                updatePayload.workflowOverrides = {
+                    customWorkflow: true,
+                    steps: workflowSteps.map(step => ({
+                        id: step.id,
+                        name: step.name,
+                        assignmentType: step.assignmentType,
+                        roles: step.roles || [],
+                        departments: step.departments || [],
+                        users: step.users || [],
+                        slaDuration: step.slaDuration || null,
+                        escalationAction: step.escalationAction || null
+                    }))
+                };
+            } else if (Object.keys(stepOverrides).length > 0) {
+                // Include inline step overrides when using default workflow
+                updatePayload.workflowOverrides = {
+                    customWorkflow: false,
+                    stepOverrides: stepOverrides
+                };
+            }
+
+            // 4. Update memo
+            await MemoApi.updateMemo(currentMemoId, updatePayload);
 
             toast.success("Memo saved");
-
-            // Optional: Navigate to edit page if create page is distinct?
-            // "The page we used for viewing memo is a different."
-            // "Create memo should be something like this."
-            // I'll stay on this page to allow Attachments upload after save.
 
         } catch (error) {
             console.error("Error saving memo:", error);
@@ -120,7 +205,7 @@ export default function CreateMemo() {
         try {
             await MemoApi.submitMemo(memoId);
             toast.success("Memo submitted successfully");
-            navigate('/dashboard'); // or wherever appropriate
+            navigate('/memos'); // Redirect to memos list after submit
         } catch (error) {
             console.error(error);
             toast.error("Failed to submit memo");
@@ -261,9 +346,105 @@ export default function CreateMemo() {
                         </TabsContent>
 
                         <TabsContent value="workflow" className="mt-0">
-                            <div className="p-8 text-center text-muted-foreground">
-                                <p>Workflow configuration will be available after selecting a topic and saving the draft.</p>
-                            </div>
+                            {!selectedTopic ? (
+                                <div className="text-center py-12 text-muted-foreground bg-muted/10 rounded-lg border border-dashed">
+                                    <Workflow className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+                                    <p className="font-medium text-slate-600">Select a topic first</p>
+                                    <p className="text-sm mt-1">Choose a category and topic to configure the approval workflow</p>
+                                </div>
+                            ) : !selectedTopicDetails ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                                </div>
+                            ) : (
+                                <div className="space-y-6">
+                                    {/* Workflow Info Banner */}
+                                    {selectedTopicDetails.workflowXml ? (
+                                        // Topic has configured workflow
+                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                            <div className="flex items-start gap-3">
+                                                <div className="p-2 rounded-lg bg-blue-100">
+                                                    <Info className="w-5 h-5 text-blue-600" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h4 className="font-semibold text-blue-900">Pre-configured Workflow</h4>
+                                                    <p className="text-sm text-blue-700 mt-1">
+                                                        This topic has a default approval workflow configured by admin.
+                                                    </p>
+
+                                                    {/* Check if any overrides allowed */}
+                                                    {(selectedTopicDetails.overridePermissions?.allowOverrideAssignments ||
+                                                        selectedTopicDetails.overridePermissions?.allowOverrideSLA ||
+                                                        selectedTopicDetails.overridePermissions?.allowOverrideEscalation) && (
+                                                            <div className="mt-3">
+                                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={useCustomWorkflow}
+                                                                        onChange={(e) => setUseCustomWorkflow(e.target.checked)}
+                                                                        className="w-4 h-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                                                                    />
+                                                                    <span className="text-sm font-medium text-blue-900">
+                                                                        Customize workflow for this memo
+                                                                    </span>
+                                                                </label>
+                                                            </div>
+                                                        )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        // General topic - no workflow configured
+                                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                            <div className="flex items-start gap-3">
+                                                <div className="p-2 rounded-lg bg-amber-100">
+                                                    <Settings className="w-5 h-5 text-amber-600" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-semibold text-amber-900">General Memo Topic</h4>
+                                                    <p className="text-sm text-amber-700 mt-1">
+                                                        This topic doesn't have a pre-configured workflow.
+                                                        Please define the approval steps below.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Step Builder - Show when customizing or general topic */}
+                                    {(useCustomWorkflow || !selectedTopicDetails.workflowXml) && (
+                                        <div className="bg-white rounded-xl border border-slate-200 p-6">
+                                            <StepBuilder
+                                                steps={workflowSteps}
+                                                onChange={setWorkflowSteps}
+                                                roles={roles}
+                                                departments={departments}
+                                                users={users}
+                                                slaDurations={slaDurations}
+                                                escalationActions={escalationActions}
+                                                allowedOverrides={selectedTopicDetails.workflowXml ? selectedTopicDetails.overridePermissions : null}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Workflow Preview - Show when using default workflow (not customizing) */}
+                                    {!useCustomWorkflow && selectedTopicDetails.workflowXml && (
+                                        <WorkflowPreview
+                                            workflowXml={selectedTopicDetails.workflowXml}
+                                            processTemplateId={selectedTopicDetails.workflowTemplateId}
+                                            topicName={selectedTopicDetails.name}
+                                            overridePermissions={selectedTopicDetails.overridePermissions}
+                                            stepOverrides={stepOverrides}
+                                            onStepOverrideChange={setStepOverrides}
+                                            roles={roles}
+                                            departments={departments}
+                                            users={users}
+                                            slaDurations={slaDurations}
+                                            escalationActions={escalationActions}
+                                        />
+                                    )}
+                                </div>
+                            )}
                         </TabsContent>
                     </div>
 

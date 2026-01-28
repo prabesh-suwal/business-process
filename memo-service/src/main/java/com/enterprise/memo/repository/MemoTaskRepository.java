@@ -12,20 +12,30 @@ import java.util.UUID;
 @Repository
 public interface MemoTaskRepository extends JpaRepository<MemoTask, UUID> {
 
-    Optional<MemoTask> findByWorkflowTaskId(String workflowTaskId);
+        Optional<MemoTask> findByWorkflowTaskId(String workflowTaskId);
 
-    List<MemoTask> findByMemoIdOrderByCreatedAtDesc(UUID memoId);
+        List<MemoTask> findByMemoIdOrderByCreatedAtDesc(UUID memoId);
 
-    List<MemoTask> findByAssignedToAndStatus(String assignedTo, MemoTask.TaskStatus status);
+        List<MemoTask> findByAssignedToAndStatus(String assignedTo, MemoTask.TaskStatus status);
 
-    @Query("SELECT t FROM MemoTask t WHERE t.status = 'PENDING' AND " +
-            "(t.assignedTo = :userId OR t.candidateUsers LIKE %:userId% OR " +
-            "t.candidateGroups IN :groups)")
-    List<MemoTask> findInboxTasks(String userId, List<String> groups);
+        @Query("SELECT t FROM MemoTask t WHERE t.status = 'PENDING' AND " +
+                        "(t.assignedTo = :userId OR t.candidateUsers LIKE %:userId% OR " +
+                        "t.candidateGroups IN :groups)")
+        List<MemoTask> findInboxTasks(String userId, List<String> groups);
 
-    @Query("SELECT t FROM MemoTask t WHERE t.status = 'PENDING' AND t.assignedTo IS NULL AND " +
-            "(t.candidateUsers LIKE %:userId% OR t.candidateGroups IN :groups)")
-    List<MemoTask> findClaimableTasks(String userId, List<String> groups);
+        @Query("SELECT t FROM MemoTask t WHERE t.status = 'PENDING' AND t.assignedTo IS NULL AND " +
+                        "(t.candidateUsers LIKE %:userId% OR t.candidateGroups IN :groups)")
+        List<MemoTask> findClaimableTasks(String userId, List<String> groups);
 
-    List<MemoTask> findByMemoId(UUID memoId);
+        List<MemoTask> findByMemoId(UUID memoId);
+
+        /**
+         * Find all tasks where user is involved (assigned, candidate, or completed).
+         * Used for determining memo access/visibility.
+         */
+        @Query("SELECT t FROM MemoTask t WHERE " +
+                        "t.assignedTo = :userId OR " +
+                        "t.candidateUsers LIKE %:userId% OR " +
+                        "(t.candidateGroups IS NOT NULL AND t.candidateGroups IN :groups)")
+        List<MemoTask> findTasksForUser(String userId, List<String> groups);
 }

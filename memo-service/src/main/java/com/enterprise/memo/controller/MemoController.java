@@ -3,6 +3,8 @@ package com.enterprise.memo.controller;
 import com.enterprise.memo.dto.CreateMemoRequest;
 import com.enterprise.memo.dto.MemoDTO;
 import com.enterprise.memo.dto.UpdateMemoRequest;
+import com.enterprise.memo.entity.Memo;
+import com.enterprise.memo.service.MemoAccessService;
 import com.enterprise.memo.service.MemoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -10,8 +12,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/memos")
@@ -19,6 +24,7 @@ import java.util.UUID;
 public class MemoController {
 
     private final MemoService memoService;
+    private final MemoAccessService memoAccessService;
 
     @PostMapping("/draft")
     public ResponseEntity<MemoDTO> createDraft(
@@ -64,6 +70,47 @@ public class MemoController {
             @RequestParam String status) {
         memoService.updateMemoStatus(id, status);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Get all memos the user can access (created, involved in workflow, or viewer).
+     * This is the main endpoint for the Memos page.
+     */
+    @GetMapping("/accessible")
+    public ResponseEntity<List<Map<String, Object>>> getAccessibleMemos(
+            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
+            @RequestHeader(value = "X-User-Roles", required = false) String roles,
+            @RequestHeader(value = "X-User-Department", required = false) String departmentId) {
+
+        List<String> roleList = roles != null
+                ? java.util.Arrays.asList(roles.split(","))
+                : java.util.List.of();
+
+        List<MemoAccessService.MemoWithAccess> memosWithAccess = memoAccessService.getAccessibleMemosWithReason(userId,
+                roleList, departmentId);
+
+        // Convert to response format
+        List<Map<String, Object>> response = memosWithAccess.stream().map(mwa -> {
+            Memo memo = mwa.memo();
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", memo.getId());
+            map.put("memoNumber", memo.getMemoNumber());
+            map.put("subject", memo.getSubject());
+            map.put("status", memo.getStatus());
+            map.put("currentStage", memo.getCurrentStage());
+            map.put("topicId", memo.getTopic() != null ? memo.getTopic().getId() : null);
+            map.put("topicName", memo.getTopic() != null ? memo.getTopic().getName() : null);
+            map.put("categoryName", memo.getTopic() != null && memo.getTopic().getCategory() != null
+                    ? memo.getTopic().getCategory().getName()
+                    : null);
+            map.put("createdBy", memo.getCreatedBy());
+            map.put("createdAt", memo.getCreatedAt());
+            map.put("updatedAt", memo.getUpdatedAt());
+            map.put("accessReason", mwa.accessReason().name());
+            return map;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(response);
     }
 
     /**

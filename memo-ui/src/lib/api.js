@@ -60,6 +60,9 @@ export const MemoApi = {
     // Update topic viewer configuration
     updateTopicViewers: (topicId, viewerConfig) => api.patch(`/memo-config/topics/${topicId}/viewers`, viewerConfig).then(res => res.data),
 
+    // Update topic override permissions (what users can customize when creating memos)
+    updateTopicOverridePermissions: (topicId, overridePermissions) => api.patch(`/memo-config/topics/${topicId}/override-permissions`, overridePermissions).then(res => res.data),
+
     // Memos
     createDraft: (data) => api.post('/memos/draft', data).then(res => res.data),
     getMemo: (id) => api.get(`/memos/${id}`).then(res => res.data),
@@ -70,6 +73,9 @@ export const MemoApi = {
     // View-only access
     getViewableMemos: () => api.get('/memo/api/memos/viewable').then(res => res.data),
     canViewMemo: (id) => api.get(`/memo/api/memos/${id}/can-view`).then(res => res.data),
+
+    // All accessible memos (created by, involved in workflow, or viewer)
+    getAccessibleMemos: () => api.get('/memos/accessible').then(res => res.data),
 
     // Attachments
     uploadAttachment: (memoId, file) => {

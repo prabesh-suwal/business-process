@@ -111,6 +111,9 @@ public class MemoService {
         if (request.getFormData() != null) {
             memo.setFormData(request.getFormData());
         }
+        if (request.getWorkflowOverrides() != null) {
+            memo.setWorkflowOverrides(request.getWorkflowOverrides());
+        }
 
         memo = memoRepository.save(memo);
         return toDTO(memo);

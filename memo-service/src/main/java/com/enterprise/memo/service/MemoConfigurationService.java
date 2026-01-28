@@ -138,4 +138,20 @@ public class MemoConfigurationService {
 
         return topicRepository.save(topic);
     }
+
+    /**
+     * Update override permissions for a topic.
+     * Controls what users can customize when creating memos (assignments, SLAs,
+     * etc.)
+     */
+    public MemoTopic updateTopicOverridePermissions(java.util.UUID topicId,
+            java.util.Map<String, Object> overridePermissions) {
+        MemoTopic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new RuntimeException("Topic not found: " + topicId));
+
+        topic.setOverridePermissions(overridePermissions);
+        log.info("Updated override permissions for topic: {}", topicId);
+
+        return topicRepository.save(topic);
+    }
 }

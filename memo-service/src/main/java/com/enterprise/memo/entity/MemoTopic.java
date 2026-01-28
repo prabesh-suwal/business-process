@@ -86,6 +86,12 @@ public class MemoTopic {
     @Column(name = "viewer_config", columnDefinition = "jsonb")
     private Map<String, Object> viewerConfig;
 
+    // Override permissions - what users can customize when creating memos
+    // {allowOverrideAssignments: true, allowOverrideSLA: false, ...}
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "override_permissions", columnDefinition = "jsonb")
+    private Map<String, Object> overridePermissions;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;

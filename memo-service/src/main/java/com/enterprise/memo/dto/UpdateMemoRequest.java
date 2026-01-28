@@ -13,4 +13,7 @@ public class UpdateMemoRequest {
 
     // Form data update
     private Map<String, Object> formData;
+
+    // Custom workflow overrides (when user customizes workflow for this memo)
+    private Map<String, Object> workflowOverrides;
 }
