@@ -75,6 +75,12 @@ public class WorkflowStepConfig {
         @Column(name = "viewer_config", columnDefinition = "jsonb")
         private Map<String, Object> viewerConfig;
 
+        // Condition/branching configuration
+        // Defines routing conditions for workflow transitions
+        @JdbcTypeCode(SqlTypes.JSON)
+        @Column(name = "condition_config", columnDefinition = "jsonb")
+        private Map<String, Object> conditionConfig;
+
         @Column(nullable = false)
         @Builder.Default
         private Boolean active = true;

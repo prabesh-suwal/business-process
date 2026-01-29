@@ -63,6 +63,9 @@ export const MemoApi = {
     // Update topic override permissions (what users can customize when creating memos)
     updateTopicOverridePermissions: (topicId, overridePermissions) => api.patch(`/memo-config/topics/${topicId}/override-permissions`, overridePermissions).then(res => res.data),
 
+    // Get available workflow variables for condition building
+    getWorkflowVariables: (topicId) => api.get(`/memo-config/topics/${topicId}/workflow-variables`).then(res => res.data),
+
     // Memos
     createDraft: (data) => api.post('/memos/draft', data).then(res => res.data),
     getMemo: (id) => api.get(`/memos/${id}`).then(res => res.data),

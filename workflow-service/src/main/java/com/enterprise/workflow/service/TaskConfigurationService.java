@@ -60,6 +60,7 @@ public class TaskConfigurationService {
         config.setViewerConfig(dto.getViewerConfig());
         config.setFormConfig(dto.getFormConfig());
         config.setEscalationConfig(dto.getEscalationConfig());
+        config.setConditionConfig(dto.getConditionConfig());
         config.setStepOrder(dto.getStepOrder());
         config.setActive(dto.getActive() != null ? dto.getActive() : true);
         config.setConfig(dto.getConfig());
@@ -137,6 +138,7 @@ public class TaskConfigurationService {
                 .viewerConfig(config.getViewerConfig())
                 .formConfig(config.getFormConfig())
                 .escalationConfig(config.getEscalationConfig())
+                .conditionConfig(config.getConditionConfig())
                 .stepOrder(config.getStepOrder())
                 .active(config.getActive())
                 .config(config.getConfig())

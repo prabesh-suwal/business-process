@@ -160,7 +160,7 @@ export default function MemoEditor() {
             const decision = decisionMap[actionType] || 'APPROVE';
 
             await TaskApi.completeTask(
-                activeTask.id,
+                activeTask.workflowTaskId || activeTask.id, // Prefer workflowTaskId if available
                 decision,
                 comment,
                 { decision }

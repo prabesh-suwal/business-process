@@ -97,4 +97,14 @@ public class MemoConfigurationController {
             @RequestBody java.util.Map<String, Object> overridePermissions) {
         return ResponseEntity.ok(configurationService.updateTopicOverridePermissions(topicId, overridePermissions));
     }
+
+    /**
+     * Get available workflow variables for condition building.
+     * Returns variables from memo fields, form schema, and initiator context.
+     */
+    @GetMapping("/topics/{topicId}/workflow-variables")
+    public ResponseEntity<List<com.enterprise.memo.dto.WorkflowVariable>> getWorkflowVariables(
+            @PathVariable java.util.UUID topicId) {
+        return ResponseEntity.ok(configurationService.getWorkflowVariables(topicId));
+    }
 }

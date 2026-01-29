@@ -55,6 +55,9 @@ public class TaskConfigurationDTO {
     // Escalation config (multi-level escalation rules)
     private Map<String, Object> escalationConfig;
 
+    // Condition config (branching/routing conditions)
+    private Map<String, Object> conditionConfig;
+
     // Step order for display
     private Integer stepOrder;
 

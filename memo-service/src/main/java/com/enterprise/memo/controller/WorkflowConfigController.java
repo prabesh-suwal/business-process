@@ -57,7 +57,9 @@ public class WorkflowConfigController {
                 request.getAssignmentConfig(),
                 request.getFormConfig(),
                 request.getSlaConfig(),
-                request.getEscalationConfig());
+                request.getEscalationConfig(),
+                request.getViewerConfig(),
+                request.getConditionConfig());
         return ResponseEntity.ok(toStepDto(config));
     }
 
@@ -128,6 +130,8 @@ public class WorkflowConfigController {
         dto.setFormConfig(config.getFormConfig());
         dto.setSlaConfig(config.getSlaConfig());
         dto.setEscalationConfig(config.getEscalationConfig());
+        dto.setViewerConfig(config.getViewerConfig());
+        dto.setConditionConfig(config.getConditionConfig());
         dto.setActive(config.getActive());
         return dto;
     }
@@ -154,6 +158,8 @@ public class WorkflowConfigController {
         private Map<String, Object> formConfig;
         private Map<String, Object> slaConfig;
         private Map<String, Object> escalationConfig;
+        private Map<String, Object> viewerConfig;
+        private Map<String, Object> conditionConfig;
         private Boolean active;
     }
 
@@ -164,6 +170,8 @@ public class WorkflowConfigController {
         private Map<String, Object> formConfig;
         private Map<String, Object> slaConfig;
         private Map<String, Object> escalationConfig;
+        private Map<String, Object> viewerConfig;
+        private Map<String, Object> conditionConfig;
     }
 
     @Data

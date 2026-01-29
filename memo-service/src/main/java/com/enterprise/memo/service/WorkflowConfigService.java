@@ -46,7 +46,9 @@ public class WorkflowConfigService {
             Map<String, Object> assignmentConfig,
             Map<String, Object> formConfig,
             Map<String, Object> slaConfig,
-            Map<String, Object> escalationConfig) {
+            Map<String, Object> escalationConfig,
+            Map<String, Object> viewerConfig,
+            Map<String, Object> conditionConfig) {
         MemoTopic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new RuntimeException("Topic not found: " + topicId));
 
@@ -61,6 +63,8 @@ public class WorkflowConfigService {
         config.setFormConfig(formConfig);
         config.setSlaConfig(slaConfig);
         config.setEscalationConfig(escalationConfig);
+        config.setViewerConfig(viewerConfig);
+        config.setConditionConfig(conditionConfig);
 
         log.info("Saving step config for topic {} task {}", topicId, taskKey);
         return stepConfigRepository.save(config);

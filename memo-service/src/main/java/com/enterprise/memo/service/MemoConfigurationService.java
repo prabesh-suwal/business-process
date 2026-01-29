@@ -22,6 +22,7 @@ public class MemoConfigurationService {
     private final MemoCategoryRepository categoryRepository;
     private final MemoTopicRepository topicRepository;
     private final com.enterprise.memo.client.WorkflowClient workflowClient;
+    private final WorkflowConfigService workflowConfigService;
 
     public MemoCategory createCategory(CreateCategoryRequest request) {
         if (categoryRepository.existsByCode(request.getCode())) {
@@ -108,8 +109,10 @@ public class MemoConfigurationService {
 
         log.info("Deploying workflow for topic: {} ({})", topic.getName(), topicId);
 
-        // Enrich BPMN with task listeners for dynamic assignment
-        String enrichedXml = com.enterprise.memo.util.BpmnEnricher.enrichBpmn(topic.getWorkflowXml());
+        // Enrich BPMN with task listeners and branching conditions
+        java.util.List<com.enterprise.memo.entity.WorkflowStepConfig> stepConfigs = workflowConfigService
+                .getStepConfigs(topicId);
+        String enrichedXml = com.enterprise.memo.util.BpmnEnricher.enrichBpmn(topic.getWorkflowXml(), stepConfigs);
 
         // Call workflow-service to deploy the enriched BPMN
         com.enterprise.memo.client.WorkflowClient.BpmnDeployResult deployResult = workflowClient.deployBpmn(
@@ -153,5 +156,90 @@ public class MemoConfigurationService {
         log.info("Updated override permissions for topic: {}", topicId);
 
         return topicRepository.save(topic);
+    }
+
+    /**
+     * Get all available workflow variables for a topic.
+     * Used by the condition builder UI to populate variable dropdowns.
+     * Returns variables from: memo fields, topic form schema, and initiator
+     * context.
+     */
+    @Transactional(readOnly = true)
+    public List<com.enterprise.memo.dto.WorkflowVariable> getWorkflowVariables(java.util.UUID topicId) {
+        MemoTopic topic = getTopic(topicId);
+        java.util.List<com.enterprise.memo.dto.WorkflowVariable> variables = new java.util.ArrayList<>();
+
+        // 1. Standard memo fields (always available)
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("memo.subject").label("Memo Subject").type("text").source("memo").build());
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("memo.priority").label("Priority").type("enum").source("memo")
+                .options(List.of("LOW", "MEDIUM", "HIGH", "URGENT")).build());
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("memo.dueDate").label("Due Date").type("date").source("memo").build());
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("memo.attachmentCount").label("Number of Attachments").type("number").source("memo").build());
+
+        // 2. Initiator context (always available)
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("initiator.role").label("Initiator Role").type("enum").source("initiator")
+                .options(List.of("OFFICER", "MANAGER", "DIRECTOR", "VP", "CEO")).build());
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("initiator.department").label("Initiator Department").type("enum").source("initiator")
+                .options(List.of("IT", "HR", "FINANCE", "OPERATIONS", "MARKETING", "LEGAL")).build());
+        variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
+                .name("initiator.branch").label("Initiator Branch").type("text").source("initiator").build());
+
+        // 3. Form fields from topic's form schema (dynamic per topic)
+        if (topic.getFormSchema() != null && !topic.getFormSchema().isEmpty()) {
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.Map<String, Object>> fields = (java.util.List<java.util.Map<String, Object>>) topic
+                    .getFormSchema().get("fields");
+
+            if (fields != null) {
+                for (java.util.Map<String, Object> field : fields) {
+                    String name = (String) field.get("name");
+                    String label = (String) field.get("label");
+                    String type = mapFormTypeToConditionType((String) field.get("type"));
+
+                    var varBuilder = com.enterprise.memo.dto.WorkflowVariable.builder()
+                            .name("form." + name)
+                            .label(label != null ? label : name)
+                            .type(type)
+                            .source("form");
+
+                    // For select/enum types, include options
+                    @SuppressWarnings("unchecked")
+                    java.util.List<java.util.Map<String, String>> options = (java.util.List<java.util.Map<String, String>>) field
+                            .get("options");
+                    if (options != null) {
+                        varBuilder.options(options.stream()
+                                .map(opt -> opt.get("value"))
+                                .filter(java.util.Objects::nonNull)
+                                .toList());
+                    }
+
+                    variables.add(varBuilder.build());
+                }
+            }
+        }
+
+        log.debug("Returning {} workflow variables for topic: {}", variables.size(), topicId);
+        return variables;
+    }
+
+    /**
+     * Map form field types to condition variable types.
+     */
+    private String mapFormTypeToConditionType(String formType) {
+        if (formType == null)
+            return "text";
+        return switch (formType.toLowerCase()) {
+            case "number", "currency", "decimal", "integer" -> "number";
+            case "select", "radio", "dropdown" -> "enum";
+            case "date", "datetime" -> "date";
+            case "checkbox", "toggle" -> "boolean";
+            default -> "text";
+        };
     }
 }

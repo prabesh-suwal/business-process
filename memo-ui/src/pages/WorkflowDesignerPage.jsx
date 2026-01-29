@@ -9,11 +9,12 @@ import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 import {
     ArrowLeft, Users, Clock, AlertTriangle, CheckCircle,
-    FileText, Save, Eye, Workflow, Settings, ChevronRight,
+    FileText, Save, Eye, Workflow, Settings, ChevronRight, ChevronDown,
     Layers, MousePointer2, Rocket, Sparkles, Zap, GitBranch, Unlock, ToggleLeft, ShieldCheck
 } from 'lucide-react';
 import ViewerConfigPanel from '../components/ViewerConfigPanel';
 import AssignmentConfigPanel from '../components/AssignmentConfigPanel';
+import ConditionBuilder from '../components/ConditionBuilder';
 import { PageContainer } from '../components/PageContainer';
 
 /**
@@ -50,6 +51,17 @@ const WorkflowDesignerPage = () => {
         allowOverrideEscalation: false,
         allowOverrideViewers: false
     });
+
+    // Collapsible section states
+    const [collapsedSections, setCollapsedSections] = useState({
+        overridePermissions: false,
+        memoWideViewers: false,
+        workflowSteps: false
+    });
+
+    const toggleSection = (section) => {
+        setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+    };
 
     // Dropdown data
     const [assignmentTypes, setAssignmentTypes] = useState([]);
@@ -89,36 +101,33 @@ const WorkflowDesignerPage = () => {
                 setAllSteps(steps);
             }
 
-            // Load saved step configurations from workflow-service
-            // Only if we have a processTemplateId (topic.workflowTemplateId)
-            const processTemplateId = topicData.workflowTemplateId;
-            if (processTemplateId) {
-                try {
-                    const savedConfigs = await WorkflowConfigApi.getTaskConfigs(processTemplateId);
-                    const configMap = {};
-                    savedConfigs.forEach(c => {
-                        configMap[c.taskKey] = {
-                            // New multi-select format
-                            roles: c.assignmentConfig?.roles || [],
-                            departments: c.assignmentConfig?.departments || [],
-                            users: c.assignmentConfig?.users || [],
-                            // Legacy single-select format
-                            assignmentType: c.assignmentConfig?.type,
-                            role: c.assignmentConfig?.role,
-                            scope: c.assignmentConfig?.scope,
-                            group: c.assignmentConfig?.groupCode,
-                            duration: c.slaConfig?.duration,
-                            escalationAction: c.escalationConfig?.escalations?.[0]?.action,
-                            viewers: c.viewerConfig?.viewers || []
-                        };
-                    });
-                    setStepConfigs(configMap);
-                    console.log('Loaded step configs from workflow-service:', configMap);
-                } catch (e) {
-                    console.log('No saved configs found in workflow-service:', e.message);
-                }
-            } else {
-                console.log('No processTemplateId - cannot load step configs from workflow-service');
+            // Load saved step configurations from memo-service
+            // Use topicId directly (memo-service stores the config per topic)
+            try {
+                const savedConfigs = await WorkflowConfigApi.getStepConfigs(topicId);
+                const configMap = {};
+                savedConfigs.forEach(c => {
+                    configMap[c.taskKey] = {
+                        // New multi-select format
+                        roles: c.assignmentConfig?.roles || [],
+                        departments: c.assignmentConfig?.departments || [],
+                        users: c.assignmentConfig?.users || [],
+                        // Legacy single-select format
+                        assignmentType: c.assignmentConfig?.type,
+                        role: c.assignmentConfig?.role,
+                        scope: c.assignmentConfig?.scope,
+                        group: c.assignmentConfig?.groupCode,
+                        duration: c.slaConfig?.duration,
+                        escalationAction: c.escalationConfig?.escalations?.[0]?.action,
+                        viewers: c.viewerConfig?.viewers || [],
+                        // Branching/condition config
+                        conditionConfig: c.conditionConfig || null
+                    };
+                });
+                setStepConfigs(configMap);
+                console.log('Loaded step configs from memo-service:', configMap);
+            } catch (e) {
+                console.log('No saved configs found in memo-service:', e.message);
             }
 
             // Load dropdown data with fallbacks
@@ -196,11 +205,52 @@ const WorkflowDesignerPage = () => {
         }
     };
 
-    // When BPMN changes, re-extract steps
+    // When BPMN changes, re-extract steps and auto-refresh stale conditions
     const handleBpmnChange = (newXml) => {
         setBpmnXml(newXml);
-        const steps = extractStepsFromBpmn(newXml);
-        setAllSteps(steps);
+        const newSteps = extractStepsFromBpmn(newXml);
+
+        // Auto-refresh stale condition targetSteps
+        // If a condition's targetStep ID no longer exists but a step with matching name does, update it
+        const newStepIds = new Set(newSteps.map(s => s.taskKey));
+        const stepsByName = Object.fromEntries(newSteps.map(s => [s.taskName, s.taskKey]));
+
+        setStepConfigs(prevConfigs => {
+            const updatedConfigs = { ...prevConfigs };
+            let hasChanges = false;
+
+            Object.keys(updatedConfigs).forEach(taskKey => {
+                const config = updatedConfigs[taskKey];
+                if (!config?.conditionConfig?.conditions) return;
+
+                const updatedConditions = config.conditionConfig.conditions.map(cond => {
+                    // Check if targetStep is stale (doesn't exist in new BPMN)
+                    if (cond.targetStep && !newStepIds.has(cond.targetStep)) {
+                        // Try to find a step with matching name
+                        const targetName = cond.targetStepName;
+                        if (targetName && stepsByName[targetName]) {
+                            console.log(`Auto-refreshing condition: ${cond.targetStep} -> ${stepsByName[targetName]} (matched by name: ${targetName})`);
+                            hasChanges = true;
+                            return { ...cond, targetStep: stepsByName[targetName] };
+                        } else {
+                            console.warn(`Stale condition: targetStep ${cond.targetStep} no longer exists and no matching name found`);
+                        }
+                    }
+                    return cond;
+                });
+
+                if (hasChanges) {
+                    updatedConfigs[taskKey] = {
+                        ...config,
+                        conditionConfig: { ...config.conditionConfig, conditions: updatedConditions }
+                    };
+                }
+            });
+
+            return updatedConfigs;
+        });
+
+        setAllSteps(newSteps);
     };
 
     // When user clicks a task in BPMN viewer
@@ -262,7 +312,8 @@ const WorkflowDesignerPage = () => {
                             action: uiConfig.escalationAction
                         }]
                     } : {},
-                    viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {}
+                    viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {},
+                    conditionConfig: uiConfig.conditionConfig || null
                 };
                 return WorkflowConfigApi.saveStepConfig(topicId, taskKey, apiConfig);
             });
@@ -297,6 +348,40 @@ const WorkflowDesignerPage = () => {
 
             // First save BPMN to topic
             await MemoApi.updateTopicWorkflow(topicId, bpmnXml);
+
+            // Save step configs to memo-service (REQUIRED for BpmnEnricher to inject conditions)
+            const saveToMemoPromises = Object.keys(stepConfigs).map(taskKey => {
+                const uiConfig = stepConfigs[taskKey];
+
+                const assignmentConfig = {
+                    roles: uiConfig.roles || [],
+                    departments: uiConfig.departments || [],
+                    users: uiConfig.users || []
+                };
+                if (uiConfig.assignmentType) assignmentConfig.type = uiConfig.assignmentType;
+                if (uiConfig.role) assignmentConfig.role = uiConfig.role;
+                if (uiConfig.scope) assignmentConfig.scope = uiConfig.scope;
+                if (uiConfig.group) assignmentConfig.groupCode = uiConfig.group;
+                if (uiConfig.department) assignmentConfig.department = uiConfig.department;
+                if (uiConfig.groupApproval) assignmentConfig.groupApproval = uiConfig.groupApproval;
+
+                const apiConfig = {
+                    taskName: allSteps.find(s => s.taskKey === taskKey)?.taskName || taskKey,
+                    assignmentConfig,
+                    slaConfig: uiConfig.duration ? { duration: uiConfig.duration } : {},
+                    escalationConfig: uiConfig.escalationAction ? {
+                        escalations: [{
+                            level: 1,
+                            after: uiConfig.duration,
+                            action: uiConfig.escalationAction
+                        }]
+                    } : {},
+                    viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {},
+                    conditionConfig: uiConfig.conditionConfig || null
+                };
+                return WorkflowConfigApi.saveStepConfig(topicId, taskKey, apiConfig);
+            });
+            await Promise.all(saveToMemoPromises);
 
             // Deploy the workflow to Flowable FIRST (creates ProcessTemplate, returns processTemplateId)
             const deployResult = await MemoApi.deployTopicWorkflow(topicId);
@@ -340,7 +425,8 @@ const WorkflowDesignerPage = () => {
                                 action: uiConfig.escalationAction
                             }]
                         } : {},
-                        viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {}
+                        viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {},
+                        conditionConfig: uiConfig.conditionConfig || null
                     };
 
                     console.log('Saving step config to workflow-service for', taskKey, ':', JSON.stringify(apiConfig, null, 2));
@@ -536,187 +622,209 @@ const WorkflowDesignerPage = () => {
 
                     {/* Tab 2: Rules & Configuration */}
                     <TabsContent value="rules" className="flex-1 flex m-0 p-0 overflow-hidden data-[state=active]:flex data-[state=inactive]:hidden bg-slate-50">
-                        <div className="w-full flex h-full p-6 gap-6">
-                            {/* Left Side: Step List & Viewers */}
-                            <div className="w-[340px] flex-shrink-0 flex flex-col h-full overflow-y-auto">
-                                {/* Override Permissions Card */}
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
-                                    <div className="px-4 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-slate-100">
-                                        <div className="flex items-center gap-2">
-                                            <div className="p-1.5 rounded-lg bg-white shadow-sm">
-                                                <Unlock className="h-4 w-4 text-emerald-600" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-sm font-semibold text-slate-800">User Override Permissions</h3>
-                                                <p className="text-xs text-slate-500">Allow memo creators to customize</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="p-4 space-y-3">
-                                        {/* Toggle: Assignments */}
-                                        <label className="flex items-center justify-between cursor-pointer group">
+                        <div className="w-full flex flex-col lg:flex-row h-full p-4 lg:p-6 gap-4 lg:gap-6 overflow-hidden">
+                            {/* Left Side: Step List & Viewers - Unified scrollable container */}
+                            <div className="w-full lg:w-[340px] flex-shrink-0 max-h-[calc(100vh-200px)] overflow-y-auto scroll-smooth">
+                                <div className="space-y-4 pb-[50vh]"> {/* Bottom padding for scroll-to-middle */}
+                                    {/* Override Permissions Card */}
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
+                                        <button
+                                            onClick={() => toggleSection('overridePermissions')}
+                                            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-slate-100 flex items-center justify-between hover:from-emerald-100 hover:to-teal-100 transition-colors"
+                                        >
                                             <div className="flex items-center gap-2">
-                                                <Users className="w-4 h-4 text-slate-400" />
-                                                <span className="text-sm text-slate-700">Modify assignments</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideAssignments: !p.allowOverrideAssignments }))}
-                                                className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideAssignments
-                                                    ? 'bg-emerald-500'
-                                                    : 'bg-slate-200'
-                                                    }`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideAssignments ? 'translate-x-5' : ''
-                                                    }`} />
-                                            </button>
-                                        </label>
-
-                                        {/* Toggle: SLA */}
-                                        <label className="flex items-center justify-between cursor-pointer group">
-                                            <div className="flex items-center gap-2">
-                                                <Clock className="w-4 h-4 text-slate-400" />
-                                                <span className="text-sm text-slate-700">Modify time limits</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideSLA: !p.allowOverrideSLA }))}
-                                                className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideSLA
-                                                    ? 'bg-emerald-500'
-                                                    : 'bg-slate-200'
-                                                    }`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideSLA ? 'translate-x-5' : ''
-                                                    }`} />
-                                            </button>
-                                        </label>
-
-                                        {/* Toggle: Escalation */}
-                                        <label className="flex items-center justify-between cursor-pointer group">
-                                            <div className="flex items-center gap-2">
-                                                <AlertTriangle className="w-4 h-4 text-slate-400" />
-                                                <span className="text-sm text-slate-700">Modify escalation rules</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideEscalation: !p.allowOverrideEscalation }))}
-                                                className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideEscalation
-                                                    ? 'bg-emerald-500'
-                                                    : 'bg-slate-200'
-                                                    }`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideEscalation ? 'translate-x-5' : ''
-                                                    }`} />
-                                            </button>
-                                        </label>
-
-                                        {/* Toggle: Viewers */}
-                                        <label className="flex items-center justify-between cursor-pointer group">
-                                            <div className="flex items-center gap-2">
-                                                <Eye className="w-4 h-4 text-slate-400" />
-                                                <span className="text-sm text-slate-700">Add/remove viewers</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideViewers: !p.allowOverrideViewers }))}
-                                                className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideViewers
-                                                    ? 'bg-emerald-500'
-                                                    : 'bg-slate-200'
-                                                    }`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideViewers ? 'translate-x-5' : ''
-                                                    }`} />
-                                            </button>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                {/* Memo-Wide Viewers Card */}
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
-                                    <div className="px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-slate-100">
-                                        <div className="flex items-center gap-2">
-                                            <div className="p-1.5 rounded-lg bg-white shadow-sm">
-                                                <Eye className="h-4 w-4 text-indigo-600" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-sm font-semibold text-slate-800">Memo-Wide Viewers</h3>
-                                                <p className="text-xs text-slate-500">Read-only access for all steps</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="p-4">
-                                        <ViewerConfigPanel
-                                            viewers={memoWideViewers}
-                                            onChange={setMemoWideViewers}
-                                            title=""
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Step List Card */}
-                                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                                    <div className="px-4 py-3 bg-gradient-to-r from-slate-800 to-slate-900 flex items-center justify-between">
-                                        <h2 className="text-sm font-semibold text-white flex items-center">
-                                            <Layers className="w-4 h-4 mr-2 text-blue-400" />
-                                            Workflow Steps
-                                        </h2>
-                                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-white/10 text-slate-300">
-                                            {allSteps.length} total
-                                        </span>
-                                    </div>
-
-                                    <div className="flex-1 overflow-y-auto p-2">
-                                        {allSteps.length === 0 ? (
-                                            <div className="p-8 text-center">
-                                                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
-                                                    <Layers className="w-8 h-8 text-slate-300" />
+                                                <div className="p-1.5 rounded-lg bg-white shadow-sm">
+                                                    <Unlock className="h-4 w-4 text-emerald-600" />
                                                 </div>
-                                                <p className="text-slate-500 text-sm font-medium">No steps found</p>
-                                                <p className="text-slate-400 text-xs mt-1">Add User Tasks in the Diagram tab</p>
+                                                <div className="text-left">
+                                                    <h3 className="text-sm font-semibold text-slate-800">User Override Permissions</h3>
+                                                    <p className="text-xs text-slate-500">Allow memo creators to customize</p>
+                                                </div>
                                             </div>
-                                        ) : (
-                                            <div className="space-y-1.5">
-                                                {allSteps.map((step, i) => {
-                                                    const isSelected = selectedStep?.taskKey === step.taskKey;
-                                                    const isConfigured = stepConfigs[step.taskKey]?.roles?.length > 0 ||
-                                                        stepConfigs[step.taskKey]?.users?.length > 0 ||
-                                                        stepConfigs[step.taskKey]?.departments?.length > 0;
-                                                    return (
-                                                        <button
-                                                            key={step.taskKey}
-                                                            className={`w-full p-3 text-left flex items-center rounded-lg transition-all duration-200 group ${isSelected
-                                                                ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset shadow-sm'
-                                                                : 'hover:bg-slate-50 border border-transparent hover:border-slate-200'
-                                                                }`}
-                                                            onClick={() => setSelectedStep(step)}
-                                                        >
-                                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-semibold mr-3 transition-all ${isSelected
-                                                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                                                                : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
-                                                                }`}>
-                                                                {i + 1}
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className={`font-medium truncate transition-colors ${isSelected ? 'text-blue-900' : 'text-slate-700'
-                                                                    }`}>{step.taskName}</div>
-                                                                <div className="text-xs text-slate-400 truncate font-mono">{step.taskKey}</div>
-                                                            </div>
-                                                            {isConfigured && (
-                                                                <div className="ml-2 p-1 rounded-full bg-emerald-100">
-                                                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                                                </div>
-                                                            )}
-                                                        </button>
-                                                    );
-                                                })}
+                                            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${collapsedSections.overridePermissions ? '-rotate-90' : ''}`} />
+                                        </button>
+                                        {!collapsedSections.overridePermissions && (
+                                            <div className="p-4 space-y-3">
+                                                {/* Toggle: Assignments */}
+                                                <label className="flex items-center justify-between cursor-pointer group">
+                                                    <div className="flex items-center gap-2">
+                                                        <Users className="w-4 h-4 text-slate-400" />
+                                                        <span className="text-sm text-slate-700">Modify assignments</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideAssignments: !p.allowOverrideAssignments }))}
+                                                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideAssignments
+                                                            ? 'bg-emerald-500'
+                                                            : 'bg-slate-200'
+                                                            }`}
+                                                    >
+                                                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideAssignments ? 'translate-x-5' : ''
+                                                            }`} />
+                                                    </button>
+                                                </label>
+
+                                                {/* Toggle: SLA */}
+                                                <label className="flex items-center justify-between cursor-pointer group">
+                                                    <div className="flex items-center gap-2">
+                                                        <Clock className="w-4 h-4 text-slate-400" />
+                                                        <span className="text-sm text-slate-700">Modify time limits</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideSLA: !p.allowOverrideSLA }))}
+                                                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideSLA
+                                                            ? 'bg-emerald-500'
+                                                            : 'bg-slate-200'
+                                                            }`}
+                                                    >
+                                                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideSLA ? 'translate-x-5' : ''
+                                                            }`} />
+                                                    </button>
+                                                </label>
+
+                                                {/* Toggle: Escalation */}
+                                                <label className="flex items-center justify-between cursor-pointer group">
+                                                    <div className="flex items-center gap-2">
+                                                        <AlertTriangle className="w-4 h-4 text-slate-400" />
+                                                        <span className="text-sm text-slate-700">Modify escalation rules</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideEscalation: !p.allowOverrideEscalation }))}
+                                                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideEscalation
+                                                            ? 'bg-emerald-500'
+                                                            : 'bg-slate-200'
+                                                            }`}
+                                                    >
+                                                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideEscalation ? 'translate-x-5' : ''
+                                                            }`} />
+                                                    </button>
+                                                </label>
+
+                                                {/* Toggle: Viewers */}
+                                                <label className="flex items-center justify-between cursor-pointer group">
+                                                    <div className="flex items-center gap-2">
+                                                        <Eye className="w-4 h-4 text-slate-400" />
+                                                        <span className="text-sm text-slate-700">Add/remove viewers</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOverridePermissions(p => ({ ...p, allowOverrideViewers: !p.allowOverrideViewers }))}
+                                                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${overridePermissions.allowOverrideViewers
+                                                            ? 'bg-emerald-500'
+                                                            : 'bg-slate-200'
+                                                            }`}
+                                                    >
+                                                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${overridePermissions.allowOverrideViewers ? 'translate-x-5' : ''
+                                                            }`} />
+                                                    </button>
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Memo-Wide Viewers Card */}
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
+                                        <button
+                                            onClick={() => toggleSection('memoWideViewers')}
+                                            className="w-full px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-slate-100 flex items-center justify-between hover:from-indigo-100 hover:to-blue-100 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1.5 rounded-lg bg-white shadow-sm">
+                                                    <Eye className="h-4 w-4 text-indigo-600" />
+                                                </div>
+                                                <div className="text-left">
+                                                    <h3 className="text-sm font-semibold text-slate-800">Memo-Wide Viewers</h3>
+                                                    <p className="text-xs text-slate-500">Read-only access for all steps</p>
+                                                </div>
+                                            </div>
+                                            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${collapsedSections.memoWideViewers ? '-rotate-90' : ''}`} />
+                                        </button>
+                                        {!collapsedSections.memoWideViewers && (
+                                            <div className="p-4">
+                                                <ViewerConfigPanel
+                                                    viewers={memoWideViewers}
+                                                    onChange={setMemoWideViewers}
+                                                    title=""
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Step List Card */}
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                                        <button
+                                            onClick={() => toggleSection('workflowSteps')}
+                                            className="w-full px-4 py-3 bg-gradient-to-r from-slate-800 to-slate-900 flex items-center justify-between hover:from-slate-700 hover:to-slate-800 transition-colors"
+                                        >
+                                            <h2 className="text-sm font-semibold text-white flex items-center">
+                                                <Layers className="w-4 h-4 mr-2 text-blue-400" />
+                                                Workflow Steps
+                                            </h2>
+                                            <div className="flex items-center gap-2">
+                                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-white/10 text-slate-300">
+                                                    {allSteps.length} total
+                                                </span>
+                                                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${collapsedSections.workflowSteps ? '-rotate-90' : ''}`} />
+                                            </div>
+                                        </button>
+
+                                        {!collapsedSections.workflowSteps && (
+                                            <div className="p-2">
+                                                {allSteps.length === 0 ? (
+                                                    <div className="p-8 text-center">
+                                                        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
+                                                            <Layers className="w-8 h-8 text-slate-300" />
+                                                        </div>
+                                                        <p className="text-slate-500 text-sm font-medium">No steps found</p>
+                                                        <p className="text-slate-400 text-xs mt-1">Add User Tasks in the Diagram tab</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1.5">
+                                                        {allSteps.map((step, i) => {
+                                                            const isSelected = selectedStep?.taskKey === step.taskKey;
+                                                            const isConfigured = stepConfigs[step.taskKey]?.roles?.length > 0 ||
+                                                                stepConfigs[step.taskKey]?.users?.length > 0 ||
+                                                                stepConfigs[step.taskKey]?.departments?.length > 0;
+                                                            return (
+                                                                <button
+                                                                    key={step.taskKey}
+                                                                    className={`w-full p-3 text-left flex items-center rounded-lg transition-all duration-200 group ${isSelected
+                                                                        ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset shadow-sm'
+                                                                        : 'hover:bg-slate-50 border border-transparent hover:border-slate-200'
+                                                                        }`}
+                                                                    onClick={() => setSelectedStep(step)}
+                                                                >
+                                                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-semibold mr-3 transition-all ${isSelected
+                                                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                                                                        : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
+                                                                        }`}>
+                                                                        {i + 1}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className={`font-medium truncate transition-colors ${isSelected ? 'text-blue-900' : 'text-slate-700'
+                                                                            }`}>{step.taskName}</div>
+                                                                        <div className="text-xs text-slate-400 truncate font-mono">{step.taskKey}</div>
+                                                                    </div>
+                                                                    {isConfigured && (
+                                                                        <div className="ml-2 p-1 rounded-full bg-emerald-100">
+                                                                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                                                        </div>
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
                                 </div>
-                            </div>
+                            </div> {/* Close scroll wrapper and left side */}
 
                             {/* Right Side: Configuration Panel */}
-                            <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 h-full overflow-hidden flex flex-col">
+                            <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 min-h-[400px] lg:h-full overflow-hidden flex flex-col">
                                 {selectedStep ? (
                                     <StepConfigurationPanel
                                         step={selectedStep}
@@ -729,6 +837,8 @@ const WorkflowDesignerPage = () => {
                                         scopes={scopes}
                                         slaDurations={slaDurations}
                                         escalationActions={escalationActions}
+                                        topicId={topicId}
+                                        allSteps={allSteps}
                                     />
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center p-12 text-center">
@@ -746,7 +856,7 @@ const WorkflowDesignerPage = () => {
                     </TabsContent>
                 </Tabs>
             </div>
-        </PageContainer>
+        </PageContainer >
     );
 };
 
@@ -813,13 +923,20 @@ const StepConfigurationPanel = ({
     departments,
     scopes,
     slaDurations,
-    escalationActions
+    escalationActions,
+    topicId,
+    allSteps
 }) => {
     const [expandedSection, setExpandedSection] = useState('assignment');
 
     const updateConfig = (key, value) => {
         onConfigChange({ ...config, [key]: value });
     };
+
+    // Get available target steps for branching (exclude current step)
+    const availableTargetSteps = allSteps
+        ?.filter(s => s.taskKey !== step.taskKey)
+        .map(s => ({ id: s.taskKey, name: s.taskName || s.taskKey })) || [];
 
     return (
         <div className="h-full flex flex-col">
@@ -927,6 +1044,34 @@ const StepConfigurationPanel = ({
                         <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
                             ⚠️ These viewers can only see tasks for THIS step
                         </div>
+                    </div>
+                </ConfigSection>
+
+                {/* Branching Section */}
+                <ConfigSection
+                    title="Branching"
+                    icon={<GitBranch className="w-4 h-4" />}
+                    isExpanded={expandedSection === 'branching'}
+                    onToggle={() => setExpandedSection(expandedSection === 'branching' ? null : 'branching')}
+                    hasConfig={config.conditionConfig?.conditions?.length > 0}
+                >
+                    <div className="space-y-4">
+                        <p className="text-xs text-gray-500">
+                            Define conditions to route memos to different steps based on their data.
+                        </p>
+                        <ConditionBuilder
+                            topicId={topicId}
+                            conditions={config.conditionConfig?.conditions || []}
+                            defaultTarget={config.conditionConfig?.defaultTarget || ''}
+                            availableSteps={availableTargetSteps}
+                            onChange={(conditions, defaultTarget) => updateConfig('conditionConfig', { conditions, defaultTarget })}
+                            label="Route After This Step"
+                        />
+                        {(!config.conditionConfig?.conditions || config.conditionConfig.conditions.length === 0) && (
+                            <div className="p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-800">
+                                💡 No conditions defined. Workflow will follow the default sequence.
+                            </div>
+                        )}
                     </div>
                 </ConfigSection>
             </div>

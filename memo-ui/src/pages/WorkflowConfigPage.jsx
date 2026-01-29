@@ -5,8 +5,9 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../co
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Settings, Users, Clock, AlertTriangle, CheckCircle, FileText, Save, Eye } from 'lucide-react';
+import { ArrowLeft, Settings, Users, Clock, AlertTriangle, CheckCircle, FileText, Save, Eye, GitBranch } from 'lucide-react';
 import SearchableMultiSelect from '../components/ui/SearchableMultiSelect';
+import ConditionBuilder from '../components/ConditionBuilder';
 
 
 /**
@@ -255,6 +256,8 @@ const WorkflowConfigPage = () => {
                             escalationActions={escalationActions}
                             onSave={handleSaveStep}
                             saving={saving}
+                            topicId={topicId}
+                            allSteps={steps}
                         />
                     ) : (
                         <Card className="shadow-lg h-full flex items-center justify-center">
@@ -335,7 +338,9 @@ const StepConfigPanel = ({
     slaDurations,
     escalationActions,
     onSave,
-    saving
+    saving,
+    topicId,
+    allSteps
 }) => {
     const [activeTab, setActiveTab] = useState('assignment');
     const [config, setConfig] = useState({
@@ -343,7 +348,8 @@ const StepConfigPanel = ({
         assignmentConfig: step.assignmentConfig || {},
         formConfig: step.formConfig || {},
         slaConfig: step.slaConfig || {},
-        escalationConfig: step.escalationConfig || {}
+        escalationConfig: step.escalationConfig || {},
+        conditionConfig: step.conditionConfig || { conditions: [], defaultTarget: '' }
     });
 
     useEffect(() => {
@@ -352,7 +358,8 @@ const StepConfigPanel = ({
             assignmentConfig: step.assignmentConfig || {},
             formConfig: step.formConfig || {},
             slaConfig: step.slaConfig || {},
-            escalationConfig: step.escalationConfig || {}
+            escalationConfig: step.escalationConfig || {},
+            conditionConfig: step.conditionConfig || { conditions: [], defaultTarget: '' }
         });
     }, [step]);
 
@@ -409,6 +416,13 @@ const StepConfigPanel = ({
                             <AlertTriangle className="w-4 h-4 mr-2" />
                             If Delayed
                         </TabsTrigger>
+                        <TabsTrigger
+                            value="branching"
+                            className="rounded-none border-b-2 border-transparent data-[state=active]:border-purple-600 data-[state=active]:bg-white py-3 px-6"
+                        >
+                            <GitBranch className="w-4 h-4 mr-2" />
+                            Branching
+                        </TabsTrigger>
                     </TabsList>
 
                     <div className="p-6">
@@ -446,6 +460,16 @@ const StepConfigPanel = ({
                                 escalationActions={escalationActions}
                                 roles={roles}
                                 slaDurations={slaDurations}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="branching" className="mt-0">
+                            <BranchingTab
+                                config={config.conditionConfig}
+                                onChange={(c) => setConfig({ ...config, conditionConfig: c })}
+                                topicId={topicId}
+                                allSteps={allSteps}
+                                currentStepKey={step.taskKey}
                             />
                         </TabsContent>
                     </div>
@@ -805,4 +829,57 @@ const EscalationTab = ({ config, onChange, escalationActions, roles, slaDuration
     );
 };
 
+/**
+ * Branching Tab - "Where does this step route to?"
+ * Uses ConditionBuilder to define conditional routing based on memo/form data.
+ */
+const BranchingTab = ({ config, onChange, topicId, allSteps, currentStepKey }) => {
+    // Filter out current step from available targets
+    const availableTargetSteps = allSteps
+        .filter(s => s.taskKey !== currentStepKey)
+        .map(s => ({ id: s.taskKey, name: s.taskName || s.taskKey }));
+
+    const handleConditionsChange = (conditions, defaultTarget) => {
+        onChange({
+            ...config,
+            conditions,
+            defaultTarget
+        });
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                    <GitBranch className="w-5 h-5 text-purple-600 mt-0.5" />
+                    <div>
+                        <h4 className="font-medium text-purple-900">Conditional Routing</h4>
+                        <p className="text-sm text-purple-700">
+                            Define conditions to route memos to different steps based on their data.
+                            If no conditions match, the default step will be used.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <ConditionBuilder
+                topicId={topicId}
+                conditions={config?.conditions || []}
+                defaultTarget={config?.defaultTarget || ''}
+                availableSteps={availableTargetSteps}
+                onChange={handleConditionsChange}
+                label="Route After This Step"
+            />
+
+            {config?.conditions?.length === 0 && (
+                <div className="text-center py-4 text-gray-500 text-sm">
+                    <p>No conditions defined. The workflow will follow the default sequence.</p>
+                    <p className="mt-1">Add conditions above to create branching logic.</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default WorkflowConfigPage;
+

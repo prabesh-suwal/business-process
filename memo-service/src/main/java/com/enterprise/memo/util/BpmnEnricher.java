@@ -30,9 +30,17 @@ public class BpmnEnricher {
      * @param bpmnXml Original BPMN XML
      * @return Enriched BPMN XML with task listeners
      */
-    public static String enrichBpmn(String bpmnXml) {
+    /**
+     * Enriches BPMN XML by injecting task listeners and condition expressions.
+     * 
+     * @param bpmnXml     Original BPMN XML
+     * @param stepConfigs Workflow step configurations containing condition logic
+     * @return Enriched BPMN XML
+     */
+    public static String enrichBpmn(String bpmnXml,
+            java.util.List<com.enterprise.memo.entity.WorkflowStepConfig> stepConfigs) {
         try {
-            log.debug("Enriching BPMN XML with task listeners");
+            log.debug("Enriching BPMN XML with task listeners and conditions");
 
             // Parse XML
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -40,27 +48,227 @@ public class BpmnEnricher {
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document doc = builder.parse(new ByteArrayInputStream(bpmnXml.getBytes(StandardCharsets.UTF_8)));
 
-            // Find all userTask elements
+            // 1. Inject Task Listeners (Assignment)
             NodeList userTasks = doc.getElementsByTagNameNS(BPMN_NS, "userTask");
             int enrichedCount = 0;
-
             for (int i = 0; i < userTasks.getLength(); i++) {
                 Element userTask = (Element) userTasks.item(i);
                 if (injectTaskListener(doc, userTask)) {
                     enrichedCount++;
                 }
             }
-
             log.info("Enriched {} user tasks with assignment listeners", enrichedCount);
+
+            // 2. Inject Conditions (Branching)
+            if (stepConfigs != null && !stepConfigs.isEmpty()) {
+                injectConditions(doc, stepConfigs);
+            }
 
             // Convert back to XML string
             return documentToString(doc);
 
         } catch (Exception e) {
             log.error("Failed to enrich BPMN XML: {}", e.getMessage(), e);
-            // Return original XML if enrichment fails (fail-safe)
             return bpmnXml;
         }
+    }
+
+    /**
+     * Compatibility method for existing callers (if any)
+     */
+    public static String enrichBpmn(String bpmnXml) {
+        return enrichBpmn(bpmnXml, null);
+    }
+
+    private static void injectConditions(Document doc,
+            java.util.List<com.enterprise.memo.entity.WorkflowStepConfig> stepConfigs) {
+        // Map configs by Task Key (ID)
+        java.util.Map<String, com.enterprise.memo.entity.WorkflowStepConfig> configMap = stepConfigs.stream()
+                .collect(java.util.stream.Collectors.toMap(com.enterprise.memo.entity.WorkflowStepConfig::getTaskKey,
+                        c -> c, (a, b) -> a));
+
+        // Collect all valid element IDs from BPMN (for validation)
+        java.util.Set<String> validElementIds = collectAllElementIds(doc);
+        log.debug("Valid BPMN element IDs: {}", validElementIds);
+
+        // Validate conditions before injection
+        for (com.enterprise.memo.entity.WorkflowStepConfig config : stepConfigs) {
+            if (config.getConditionConfig() == null)
+                continue;
+
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.Map<String, Object>> conditions = (java.util.List<java.util.Map<String, Object>>) config
+                    .getConditionConfig().get("conditions");
+
+            if (conditions == null)
+                continue;
+
+            for (java.util.Map<String, Object> cond : conditions) {
+                String targetStep = (String) cond.get("targetStep");
+                if (targetStep != null && !targetStep.isEmpty() && !validElementIds.contains(targetStep)) {
+                    log.warn(
+                            "⚠️ STALE CONDITION: Task '{}' has condition targeting '{}' which does NOT exist in BPMN! "
+                                    +
+                                    "The condition will be ignored. Please reconfigure the condition in the designer.",
+                            config.getTaskKey(), targetStep);
+                }
+            }
+        }
+
+        // Index all Sequence Flows by Source Ref
+        NodeList sequenceFlows = doc.getElementsByTagNameNS(BPMN_NS, "sequenceFlow");
+        java.util.Map<String, java.util.List<Element>> flowsBySource = new java.util.HashMap<>();
+
+        for (int i = 0; i < sequenceFlows.getLength(); i++) {
+            Element flow = (Element) sequenceFlows.item(i);
+            String sourceRef = flow.getAttribute("sourceRef");
+            flowsBySource.computeIfAbsent(sourceRef, k -> new java.util.ArrayList<>()).add(flow);
+        }
+
+        // Iterate user tasks to find their branching logic
+        NodeList userTasks = doc.getElementsByTagNameNS(BPMN_NS, "userTask");
+        for (int i = 0; i < userTasks.getLength(); i++) {
+            Element userTask = (Element) userTasks.item(i);
+            String taskId = userTask.getAttribute("id");
+            com.enterprise.memo.entity.WorkflowStepConfig config = configMap.get(taskId);
+
+            if (config == null || config.getConditionConfig() == null)
+                continue;
+
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.Map<String, Object>> conditions = (java.util.List<java.util.Map<String, Object>>) config
+                    .getConditionConfig().get("conditions");
+
+            if (conditions == null || conditions.isEmpty())
+                continue;
+
+            // Find outgoing flows
+            java.util.List<Element> outgoingFlows = flowsBySource.get(taskId);
+            if (outgoingFlows == null)
+                continue;
+
+            for (Element flow : outgoingFlows) {
+                String targetRef = flow.getAttribute("targetRef");
+
+                // Check if target is a Gateway (typical pattern)
+                Element gateway = findElementById(doc, targetRef);
+                if (gateway != null && (gateway.getNodeName().contains("Gateway")
+                        || gateway.getNodeName().endsWith(":exclusiveGateway"))) {
+                    // Start injecting conditions on Gateway's outgoing flows
+                    java.util.List<Element> gatewayFlows = flowsBySource.get(targetRef);
+                    if (gatewayFlows != null) {
+                        for (Element gwFlow : gatewayFlows) {
+                            applyConditionToFlow(doc, gwFlow, conditions);
+                        }
+                    }
+                } else {
+                    // Direct connection (less common for branching, but possible)
+                    applyConditionToFlow(doc, flow, conditions);
+                }
+            }
+        }
+    }
+
+    private static void applyConditionToFlow(Document doc, Element flow,
+            java.util.List<java.util.Map<String, Object>> conditions) {
+        String flowId = flow.getAttribute("id");
+        String targetStep = flow.getAttribute("targetRef");
+
+        log.info("Checking flow {} -> {} against {} conditions", flowId, targetStep, conditions.size());
+
+        // Log all condition targets for debugging
+        for (java.util.Map<String, Object> cond : conditions) {
+            String condTarget = (String) cond.get("targetStep");
+            log.info("  Condition targetStep='{}' vs flow targetRef='{}' match={}",
+                    condTarget, targetStep, targetStep.equals(condTarget));
+        }
+
+        // Find matching condition for this target
+        for (java.util.Map<String, Object> cond : conditions) {
+            String condTarget = (String) cond.get("targetStep");
+            if (targetStep.equals(condTarget)) {
+                // Generate Expression
+                String field = (String) cond.get("field");
+                String operator = (String) cond.get("operator");
+                Object value = cond.get("value");
+
+                String expression = buildExpression(field, operator, value);
+                log.info("*** INJECTING condition on flow {} -> {}: {}", flowId, targetStep, expression);
+
+                // Add conditionExpression element
+                Element condExpr = doc.createElementNS(BPMN_NS, "conditionExpression");
+                condExpr.setAttribute("xsi:type", "tFormalExpression");
+                condExpr.setTextContent(expression);
+
+                // Remove existing if any
+                NodeList existing = flow.getElementsByTagNameNS(BPMN_NS, "conditionExpression");
+                while (existing.getLength() > 0) {
+                    flow.removeChild(existing.item(0));
+                }
+
+                flow.appendChild(condExpr);
+                break; // Only one condition per flow
+            }
+        }
+    }
+
+    private static String buildExpression(String field, String operator, Object value) {
+        String op = switch (operator) {
+            case "EQUALS" -> "==";
+            case "NOT_EQUALS" -> "!=";
+            case "GREATER_THAN" -> ">";
+            case "LESS_THAN" -> "<";
+            case "GREATER_THAN_OR_EQUALS" -> ">=";
+            case "LESS_THAN_OR_EQUALS" -> "<=";
+            default -> "==";
+        };
+
+        String valStr;
+        if (value instanceof String) {
+            valStr = "'" + value + "'";
+        } else {
+            valStr = String.valueOf(value);
+        }
+
+        return "${" + field + " " + op + " " + valStr + "}";
+    }
+
+    private static Element findElementById(Document doc, String id) {
+        // Simple search (XPath would be better but DOM traversal is fine for small
+        // graphs)
+        // Check tasks, gateways, events
+        String[] tags = { "userTask", "exclusiveGateway", "parallelGateway", "inclusiveGateway", "task", "serviceTask",
+                "sendTask", "endEvent" };
+        for (String tag : tags) {
+            NodeList list = doc.getElementsByTagNameNS(BPMN_NS, tag);
+            for (int i = 0; i < list.getLength(); i++) {
+                Element el = (Element) list.item(i);
+                if (id.equals(el.getAttribute("id"))) {
+                    return el;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Collect all element IDs from BPMN document (for validation).
+     */
+    private static java.util.Set<String> collectAllElementIds(Document doc) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        String[] tags = { "userTask", "exclusiveGateway", "parallelGateway", "inclusiveGateway",
+                "task", "serviceTask", "sendTask", "startEvent", "endEvent", "intermediateCatchEvent" };
+        for (String tag : tags) {
+            NodeList list = doc.getElementsByTagNameNS(BPMN_NS, tag);
+            for (int i = 0; i < list.getLength(); i++) {
+                Element el = (Element) list.item(i);
+                String id = el.getAttribute("id");
+                if (id != null && !id.isEmpty()) {
+                    ids.add(id);
+                }
+            }
+        }
+        return ids;
     }
 
     /**

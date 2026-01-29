@@ -127,6 +127,11 @@ public class TaskConfiguration {
     @Column(name = "escalation_config", columnDefinition = "jsonb")
     private Map<String, Object> escalationConfig;
 
+    // === CONDITION CONFIG (branching/routing conditions) ===
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "condition_config", columnDefinition = "jsonb")
+    private Map<String, Object> conditionConfig;
+
     // Step order for display
     @Column(name = "step_order")
     @Builder.Default

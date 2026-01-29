@@ -142,6 +142,17 @@ public class MemoService {
         // Start Workflow
         try {
             java.util.Map<String, Object> variables = new java.util.HashMap<>();
+            // Allow access via "memo.field" in expressions
+            java.util.Map<String, Object> memoMap = new java.util.HashMap<>();
+            memoMap.put("id", memo.getId().toString());
+            memoMap.put("memoNumber", memo.getMemoNumber());
+            memoMap.put("subject", memo.getSubject());
+            memoMap.put("priority", memo.getPriority());
+            if (memo.getFormData() != null) {
+                memoMap.put("formData", memo.getFormData());
+            }
+            variables.put("memo", memoMap);
+
             variables.put("memoId", memo.getId().toString());
             variables.put("memoNumber", memo.getMemoNumber());
             variables.put("subject", memo.getSubject());
