@@ -60,6 +60,13 @@ public class MemoTaskService {
     }
 
     /**
+     * Save a task (used by webhook handlers).
+     */
+    public MemoTask saveTask(MemoTask task) {
+        return taskRepository.save(task);
+    }
+
+    /**
      * Get task by workflow task ID.
      */
     @Transactional(readOnly = true)
@@ -73,6 +80,17 @@ public class MemoTaskService {
     @Transactional(readOnly = true)
     public List<MemoTask> getTasksForMemo(UUID memoId) {
         return taskRepository.findByMemoIdOrderByCreatedAtDesc(memoId);
+    }
+
+    /**
+     * Get the Flowable process instance ID for a memo.
+     * Used for parallel execution tracking.
+     */
+    @Transactional(readOnly = true)
+    public String getProcessInstanceIdForMemo(UUID memoId) {
+        return memoRepository.findById(memoId)
+                .map(Memo::getProcessInstanceId)
+                .orElse(null);
     }
 
     /**
@@ -145,7 +163,7 @@ public class MemoTaskService {
 
         workflowClient.completeTask(task.getWorkflowTaskId(), userId.toString(),
                 userName != null ? userName : "Unknown",
-                taskVariables);
+                taskVariables, false); // cancelOthers handled by TaskController
 
         // Update memo status based on action
         updateMemoStatus(task.getMemo(), action);

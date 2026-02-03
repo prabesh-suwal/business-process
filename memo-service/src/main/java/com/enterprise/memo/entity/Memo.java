@@ -75,6 +75,12 @@ public class Memo {
     @Column(name = "workflow_overrides", columnDefinition = "jsonb")
     private Map<String, Object> workflowOverrides;
 
+    // Track which workflow version this memo uses
+    // Memos continue using their original version even if topic is updated
+    @Column(name = "workflow_version")
+    @Builder.Default
+    private Integer workflowVersion = 1;
+
     // Audit
     @Column(name = "created_by")
     private UUID createdBy; // User UUID

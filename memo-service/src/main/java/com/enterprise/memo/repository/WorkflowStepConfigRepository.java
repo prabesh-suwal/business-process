@@ -18,4 +18,7 @@ public interface WorkflowStepConfigRepository extends JpaRepository<WorkflowStep
     Optional<WorkflowStepConfig> findByMemoTopicIdAndTaskKey(UUID memoTopicId, String taskKey);
 
     void deleteByMemoTopicId(UUID memoTopicId);
+
+    // Delete orphaned step configs when tasks are removed from BPMN
+    void deleteByMemoTopicIdAndTaskKeyNotIn(UUID memoTopicId, List<String> taskKeys);
 }

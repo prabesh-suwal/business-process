@@ -57,7 +57,25 @@ public class WorkflowWebhookController {
      */
     @PostMapping("/task-completed")
     public ResponseEntity<Void> onTaskCompleted(@RequestBody TaskCompletedEvent event) {
-        log.info("Webhook: Task completed - {}", event.getTaskId());
+        log.info("Webhook: Task completed - {} by {}, action: {}",
+                event.getTaskId(), event.getCompletedBy(), event.getAction());
+
+        // Update MemoTask status to COMPLETED
+        taskService.getByWorkflowTaskId(event.getTaskId()).ifPresent(task -> {
+            task.setStatus(MemoTask.TaskStatus.COMPLETED);
+            task.setCompletedAt(java.time.LocalDateTime.now());
+            if (event.getAction() != null) {
+                try {
+                    task.setActionTaken(MemoTask.TaskAction.valueOf(event.getAction().toUpperCase()));
+                } catch (IllegalArgumentException e) {
+                    log.warn("Unknown action: {}", event.getAction());
+                }
+            }
+            // Save is handled by transaction - need explicit save
+            taskService.saveTask(task);
+            log.info("Updated MemoTask {} to COMPLETED", task.getId());
+        });
+
         return ResponseEntity.ok().build();
     }
 

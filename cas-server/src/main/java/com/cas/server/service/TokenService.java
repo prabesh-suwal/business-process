@@ -62,6 +62,11 @@ public class TokenService {
         if (!constraints.isEmpty()) {
             productData.put("constraints", constraints);
         }
+        // Add productId from the first role's product
+        if (!roles.isEmpty()) {
+            UUID productId = roles.iterator().next().getProduct().getId();
+            productData.put("productId", productId.toString());
+        }
         productClaims.put(productCode, productData);
 
         // Build organization claims for ABAC

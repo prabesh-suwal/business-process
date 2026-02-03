@@ -96,6 +96,11 @@ public class MemoTopic {
     @Builder.Default
     private Boolean active = true;
 
+    // Workflow version number (v1, v2, v3...)
+    @Column(name = "workflow_version")
+    @Builder.Default
+    private Integer workflowVersion = 1;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -103,4 +108,12 @@ public class MemoTopic {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    /**
+     * Check if workflow is deployed (locked for editing).
+     * A workflow is deployed when workflowTemplateId is set.
+     */
+    public boolean isWorkflowDeployed() {
+        return workflowTemplateId != null && !workflowTemplateId.isBlank();
+    }
 }

@@ -75,6 +75,7 @@ public class ActionTimeline {
         TASK_CLAIMED,
         TASK_COMPLETED,
         TASK_DELEGATED,
+        TASK_CANCELLED, // For parallel branch cancellation (first approval wins)
         VARIABLE_UPDATED,
         FORM_SUBMITTED,
         DOCUMENT_UPLOADED,

@@ -133,7 +133,8 @@ public class ProcessDesignService {
          * Also creates a ProcessTemplate record for centralized management.
          * Returns both the Flowable process definition ID and our ProcessTemplate UUID.
          */
-        public BpmnDeploymentResult deployRawBpmn(String processKey, String processName, String bpmnXml) {
+        public BpmnDeploymentResult deployRawBpmn(String processKey, String processName, String bpmnXml,
+                        UUID productId) {
                 if (bpmnXml == null || bpmnXml.isBlank()) {
                         throw new IllegalArgumentException("BPMN XML is required");
                 }
@@ -144,7 +145,8 @@ public class ProcessDesignService {
                                 .replaceAll("_+", "_")
                                 .replaceAll("^_|_$", "");
 
-                log.info("Deploying raw BPMN for process: {} (key: {})", processName, normalizedKey);
+                log.info("Deploying raw BPMN for process: {} (key: {}) with productId: {}", processName, normalizedKey,
+                                productId);
 
                 // Deploy to Flowable
                 Deployment deployment = repositoryService.createDeployment()
@@ -167,6 +169,7 @@ public class ProcessDesignService {
                                 .findByFlowableProcessDefKey(processDefinition.getKey())
                                 .orElse(ProcessTemplate.builder()
                                                 .name(processName != null ? processName : normalizedKey)
+                                                .productId(productId)
                                                 .productCode("MMS") // Default to MMS for memo workflows
                                                 .version(1)
                                                 .status(ProcessTemplate.ProcessTemplateStatus.ACTIVE)

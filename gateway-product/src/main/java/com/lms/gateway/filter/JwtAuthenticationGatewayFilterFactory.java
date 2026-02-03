@@ -118,6 +118,15 @@ public class JwtAuthenticationGatewayFilterFactory
                                 .header("X-Token-Jti", claims.getId())
                                 .header("X-Product-Code", String.join(",", products.keySet()));
 
+                        // Extract productId from first product's claims
+                        if (!products.isEmpty()) {
+                            Map<String, Object> firstProduct = products.values().iterator().next();
+                            Object productIdObj = firstProduct.get("productId");
+                            if (productIdObj != null) {
+                                r.header("X-Product-Id", productIdObj.toString());
+                            }
+                        }
+
                         // Add scopes header
                         if (!scopes.isEmpty()) {
                             r.header("X-Scopes", String.join(",", scopes));

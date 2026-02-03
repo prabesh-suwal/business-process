@@ -3,6 +3,10 @@ import axios from 'axios';
 // API Configuration - Memo Gateway
 const GATEWAY_URL = 'http://localhost:8086'; // gateway-product port
 
+// Token refresh state
+let isRefreshing = false;
+let refreshPromise = null;
+
 const api = axios.create({
     baseURL: GATEWAY_URL,
     headers: {
@@ -10,6 +14,37 @@ const api = axios.create({
     },
     withCredentials: true // Important for SSO cookies
 });
+
+// Try to refresh the token
+async function refreshAccessToken() {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+        throw new Error('No refresh token');
+    }
+
+    const response = await axios.post(`${GATEWAY_URL}/auth/refresh`, {
+        refreshToken: refreshToken,
+        productCode: 'MMS'
+    }, {
+        headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (response.status !== 200) {
+        throw new Error('Refresh failed');
+    }
+
+    const data = response.data;
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    return data.access_token;
+}
+
+// Clear all auth tokens
+function clearTokens() {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+}
 
 // Request interceptor to add Bearer token
 api.interceptors.request.use(
@@ -24,14 +59,47 @@ api.interceptors.request.use(
     error => Promise.reject(error)
 );
 
-// Interceptor to handle 401s
+// Interceptor to handle 401s with token refresh
 api.interceptors.response.use(
     response => response,
-    error => {
+    async error => {
+        const originalRequest = error.config;
+
+        // On 401, try to refresh token (but only once per request)
+        if (error.response && error.response.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true;
+
+            try {
+                // Prevent multiple simultaneous refresh attempts
+                if (!isRefreshing) {
+                    isRefreshing = true;
+                    refreshPromise = refreshAccessToken();
+                }
+
+                await refreshPromise;
+                isRefreshing = false;
+                refreshPromise = null;
+
+                // Retry the original request with new token
+                const newToken = localStorage.getItem('access_token');
+                originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+                return api(originalRequest);
+            } catch (refreshError) {
+                isRefreshing = false;
+                refreshPromise = null;
+                console.warn("Token refresh failed - redirecting to login.");
+                clearTokens();
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login';
+                }
+                return Promise.reject(refreshError);
+            }
+        }
+
+        // For other 401s (after retry failed), redirect to login
         if (error.response && error.response.status === 401) {
             console.warn("Unauthorized - session might be expired.");
-            localStorage.removeItem('access_token');
-            // We rely on React State (AuthContext) to update UI, but window redirect is a safety net
+            clearTokens();
             if (!window.location.pathname.includes('/login')) {
                 window.location.href = '/login';
             }
@@ -65,6 +133,30 @@ export const MemoApi = {
 
     // Get available workflow variables for condition building
     getWorkflowVariables: (topicId) => api.get(`/memo-config/topics/${topicId}/workflow-variables`).then(res => res.data),
+
+    // Copy workflow to new version (unlocks deployed workflow for editing)
+    copyTopicWorkflow: (topicId) => api.post(`/memo-config/topics/${topicId}/copy-workflow`).then(res => res.data),
+
+    // ==================== GATEWAY CONFIGURATION ====================
+
+    // Get all gateway configs for a topic
+    getGatewayConfigs: (topicId) => api.get(`/memo/api/topics/${topicId}/gateways`).then(res => res.data),
+
+    // Get a specific gateway config
+    getGatewayConfig: (topicId, gatewayId) =>
+        api.get(`/memo/api/topics/${topicId}/gateways/${gatewayId}`).then(res => res.data),
+
+    // Save a gateway config (completion mode: ALL, ANY, N_OF_M)
+    saveGatewayConfig: (topicId, gatewayId, config) =>
+        api.put(`/memo/api/topics/${topicId}/gateways/${gatewayId}`, config).then(res => res.data),
+
+    // Bulk save gateway configs
+    saveGatewayConfigs: (topicId, configs) =>
+        api.put(`/memo/api/topics/${topicId}/gateways`, configs).then(res => res.data),
+
+    // Delete a gateway config
+    deleteGatewayConfig: (topicId, gatewayId) =>
+        api.delete(`/memo/api/topics/${topicId}/gateways/${gatewayId}`).then(res => res.data),
 
     // Memos
     createDraft: (data) => api.post('/memos/draft', data).then(res => res.data),
@@ -100,8 +192,13 @@ export const MemoApi = {
             password,
             productCode: 'MMS'
         }).then(res => {
-            if (res.data.tokens && res.data.tokens.access_token) {
-                localStorage.setItem('access_token', res.data.tokens.access_token);
+            if (res.data.tokens) {
+                if (res.data.tokens.access_token) {
+                    localStorage.setItem('access_token', res.data.tokens.access_token);
+                }
+                if (res.data.tokens.refresh_token) {
+                    localStorage.setItem('refresh_token', res.data.tokens.refresh_token);
+                }
             }
             return res.data;
         });
@@ -109,7 +206,10 @@ export const MemoApi = {
 
     logout: () => {
         return api.post('/auth/logout/global').then(() => {
-            localStorage.removeItem('access_token');
+            clearTokens();
+        }).catch(() => {
+            // Clear tokens even if logout request fails
+            clearTokens();
         });
     }
 };
@@ -134,11 +234,17 @@ export const TaskApi = {
     claimTask: (taskId) => api.post(`/memo/api/tasks/${taskId}/claim`).then(res => res.data),
 
     // Task actions (approve, reject, send_back, etc.)
-    completeTask: (taskId, action, comment, variables) => api.post(`/memo/api/tasks/${taskId}/action`, {
-        action,
-        comment,
-        variables
-    }).then(res => res.data),
+    // cancelOthers: if true, cancels other parallel tasks (for "first approval wins" mode)
+    completeTask: (taskId, action, comment, variables, cancelOthers = false) => {
+        const url = cancelOthers
+            ? `/memo/api/tasks/${taskId}/action?cancelOthers=true`
+            : `/memo/api/tasks/${taskId}/action`;
+        return api.post(url, {
+            action,
+            comment,
+            variables
+        }).then(res => res.data);
+    },
 
     // Get tasks for a specific memo
     getTasksForMemo: (memoId) => api.get(`/memo/api/tasks/memo/${memoId}`).then(res => res.data),
@@ -150,6 +256,24 @@ export const TaskApi = {
     // Send Back / Reject
     getReturnPoints: (taskId) => api.get(`/memo/api/tasks/${taskId}/return-points`).then(res => res.data),
     sendBackTask: (taskId, targetActivityId, reason) => api.post(`/memo/api/tasks/${taskId}/send-back`, { targetActivityId, reason }).then(res => res.data),
+
+    // ==================== PARALLEL EXECUTION TRACKING ====================
+
+    // Get parallel execution status for a process (shows "2 of 3 branches completed")
+    getParallelStatus: (processInstanceId) =>
+        api.get(`/memo/api/tasks/parallel-status/${processInstanceId}`).then(res => res.data),
+
+    // Get parallel execution status by memo ID (convenience method)
+    getParallelStatusByMemo: (memoId) =>
+        api.get(`/memo/api/tasks/parallel-status/memo/${memoId}`).then(res => res.data),
+
+    // Get all active tasks for a process (multiple during parallel execution)
+    getActiveTasks: (processInstanceId) =>
+        api.get(`/memo/api/tasks/active/${processInstanceId}`).then(res => res.data),
+
+    // Get active executions (tokens) in a process for visualization
+    getActiveExecutions: (processInstanceId) =>
+        api.get(`/workflow/api/tasks/executions/${processInstanceId}`).then(res => res.data),
 };
 
 export const HistoryApi = {

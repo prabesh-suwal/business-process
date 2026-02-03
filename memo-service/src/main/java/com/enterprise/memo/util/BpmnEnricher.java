@@ -329,4 +329,206 @@ public class BpmnEnricher {
         transformer.transform(new DOMSource(doc), new StreamResult(writer));
         return writer.getBuffer().toString();
     }
+
+    // ==================== PARALLEL GATEWAY SUPPORT ====================
+
+    /**
+     * Info about a detected gateway in the BPMN.
+     */
+    public static class GatewayInfo {
+        public String id;
+        public String name;
+        public String type; // parallelGateway, inclusiveGateway, exclusiveGateway
+        public int incomingFlows;
+        public int outgoingFlows;
+        public boolean isJoin;
+        public boolean isFork;
+
+        public GatewayInfo(String id, String name, String type, int incoming, int outgoing) {
+            this.id = id;
+            this.name = name;
+            this.type = type;
+            this.incomingFlows = incoming;
+            this.outgoingFlows = outgoing;
+            this.isJoin = incoming > 1;
+            this.isFork = outgoing > 1;
+        }
+    }
+
+    /**
+     * Detects all parallel and inclusive gateways in a BPMN document.
+     * Returns info about each gateway for UI display/configuration.
+     */
+    public static java.util.List<GatewayInfo> detectGateways(String bpmnXml) {
+        java.util.List<GatewayInfo> gateways = new java.util.ArrayList<>();
+
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document doc = builder.parse(new ByteArrayInputStream(bpmnXml.getBytes(StandardCharsets.UTF_8)));
+
+            // Find all gateways
+            String[] gatewayTypes = { "parallelGateway", "inclusiveGateway", "exclusiveGateway" };
+
+            for (String gatewayType : gatewayTypes) {
+                NodeList nodes = doc.getElementsByTagNameNS(BPMN_NS, gatewayType);
+                for (int i = 0; i < nodes.getLength(); i++) {
+                    Element gateway = (Element) nodes.item(i);
+                    String id = gateway.getAttribute("id");
+                    String name = gateway.getAttribute("name");
+
+                    // Count incoming/outgoing flows
+                    int incoming = countFlowsToElement(doc, id, true);
+                    int outgoing = countFlowsToElement(doc, id, false);
+
+                    gateways.add(new GatewayInfo(id, name, gatewayType, incoming, outgoing));
+                }
+            }
+
+            log.debug("Detected {} gateways in BPMN", gateways.size());
+
+        } catch (Exception e) {
+            log.error("Error detecting gateways: {}", e.getMessage());
+        }
+
+        return gateways;
+    }
+
+    /**
+     * Counts sequence flows going to (incoming=true) or from (incoming=false) an
+     * element.
+     */
+    private static int countFlowsToElement(Document doc, String elementId, boolean incoming) {
+        int count = 0;
+        NodeList flows = doc.getElementsByTagNameNS(BPMN_NS, "sequenceFlow");
+
+        for (int i = 0; i < flows.getLength(); i++) {
+            Element flow = (Element) flows.item(i);
+            String targetAttr = incoming ? "targetRef" : "sourceRef";
+            if (elementId.equals(flow.getAttribute(targetAttr))) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Enriches BPMN with gateway completion conditions based on configuration.
+     * 
+     * @param bpmnXml        Original BPMN XML
+     * @param stepConfigs    Step configurations (existing functionality)
+     * @param gatewayConfigs Gateway configurations for completion modes
+     * @return Enriched BPMN XML
+     */
+    public static String enrichBpmn(String bpmnXml,
+            java.util.List<com.enterprise.memo.entity.WorkflowStepConfig> stepConfigs,
+            java.util.List<com.enterprise.memo.entity.WorkflowGatewayConfig> gatewayConfigs) {
+        try {
+            log.debug("Enriching BPMN with task listeners, conditions, and gateway configs");
+
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document doc = builder.parse(new ByteArrayInputStream(bpmnXml.getBytes(StandardCharsets.UTF_8)));
+
+            // 1. Inject Task Listeners
+            NodeList userTasks = doc.getElementsByTagNameNS(BPMN_NS, "userTask");
+            int enrichedCount = 0;
+            for (int i = 0; i < userTasks.getLength(); i++) {
+                Element userTask = (Element) userTasks.item(i);
+                if (injectTaskListener(doc, userTask)) {
+                    enrichedCount++;
+                }
+            }
+            log.info("Enriched {} user tasks with assignment listeners", enrichedCount);
+
+            // 2. Inject Conditions
+            if (stepConfigs != null && !stepConfigs.isEmpty()) {
+                injectConditions(doc, stepConfigs);
+            }
+
+            // 3. Inject Gateway Completion Conditions
+            if (gatewayConfigs != null && !gatewayConfigs.isEmpty()) {
+                injectGatewayCompletionConditions(doc, gatewayConfigs);
+            }
+
+            return documentToString(doc);
+
+        } catch (Exception e) {
+            log.error("Failed to enrich BPMN XML: {}", e.getMessage(), e);
+            return bpmnXml;
+        }
+    }
+
+    /**
+     * Injects completion conditions for gateways with ANY or N_OF_M mode.
+     * Uses Flowable's multi-instance and completion condition expressions.
+     */
+    private static void injectGatewayCompletionConditions(Document doc,
+            java.util.List<com.enterprise.memo.entity.WorkflowGatewayConfig> configs) {
+
+        for (var config : configs) {
+            if (!config.requiresCompletionCondition()) {
+                continue;
+            }
+
+            Element gateway = findElementById(doc, config.getGatewayId());
+            if (gateway == null) {
+                log.warn("Gateway not found in BPMN: {}", config.getGatewayId());
+                continue;
+            }
+
+            // Add Flowable extension elements for completion condition
+            Element extensionElements = getOrCreateExtensionElements(doc, gateway);
+
+            // Add completion condition as execution listener attribute
+            // For parallel gateways, we use the completionCondition attribute
+            String conditionExpression = buildCompletionCondition(config);
+
+            // Set flowable:completionCondition attribute on the gateway
+            gateway.setAttributeNS(FLOWABLE_NS, "flowable:completionCondition", conditionExpression);
+
+            log.info("Injected completion condition on gateway {}: mode={}, expression={}",
+                    config.getGatewayId(), config.getCompletionMode(), conditionExpression);
+        }
+    }
+
+    /**
+     * Builds a Flowable completion condition expression based on the config.
+     */
+    private static String buildCompletionCondition(com.enterprise.memo.entity.WorkflowGatewayConfig config) {
+        switch (config.getCompletionMode()) {
+            case ANY:
+                // Complete when any 1 branch finishes
+                return "${nrOfCompletedInstances >= 1}";
+
+            case N_OF_M:
+                // Complete when N branches finish
+                int required = config.getMinimumRequired() != null ? config.getMinimumRequired() : 1;
+                return "${nrOfCompletedInstances >= " + required + "}";
+
+            case ALL:
+            default:
+                // Default: wait for all (no condition needed)
+                return "${nrOfCompletedInstances >= nrOfInstances}";
+        }
+    }
+
+    /**
+     * Gets or creates extensionElements child for an element.
+     */
+    private static Element getOrCreateExtensionElements(Document doc, Element parent) {
+        // Check for existing
+        NodeList existing = parent.getElementsByTagNameNS(BPMN_NS, "extensionElements");
+        if (existing.getLength() > 0) {
+            return (Element) existing.item(0);
+        }
+
+        // Create new
+        Element extensionElements = doc.createElementNS(BPMN_NS, "bpmn:extensionElements");
+        parent.insertBefore(extensionElements, parent.getFirstChild());
+        return extensionElements;
+    }
 }

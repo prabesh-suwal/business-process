@@ -52,6 +52,12 @@ public class WorkflowConfigService {
         MemoTopic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new RuntimeException("Topic not found: " + topicId));
 
+        // Reject edit if workflow is already deployed (locked)
+        if (topic.isWorkflowDeployed()) {
+            throw new IllegalStateException(
+                    "Cannot modify deployed workflow. Use 'Copy to New Version' to create an editable copy.");
+        }
+
         WorkflowStepConfig config = stepConfigRepository.findByMemoTopicIdAndTaskKey(topicId, taskKey)
                 .orElse(WorkflowStepConfig.builder()
                         .memoTopic(topic)
@@ -87,6 +93,12 @@ public class WorkflowConfigService {
             boolean activate) {
         MemoTopic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new RuntimeException("Topic not found: " + topicId));
+
+        // Reject edit if workflow is already deployed (locked)
+        if (topic.isWorkflowDeployed()) {
+            throw new IllegalStateException(
+                    "Cannot modify deployed workflow. Use 'Copy to New Version' to create an editable copy.");
+        }
 
         // Get current max version
         List<GatewayDecisionRule> existing = gatewayRuleRepository

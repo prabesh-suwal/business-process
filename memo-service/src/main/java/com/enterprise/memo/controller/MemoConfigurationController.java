@@ -71,8 +71,10 @@ public class MemoConfigurationController {
      * the topic.
      */
     @PostMapping("/topics/{topicId}/deploy-workflow")
-    public ResponseEntity<MemoTopic> deployTopicWorkflow(@PathVariable java.util.UUID topicId) {
-        return ResponseEntity.ok(configurationService.deployTopicWorkflow(topicId));
+    public ResponseEntity<MemoTopic> deployTopicWorkflow(
+            @PathVariable java.util.UUID topicId,
+            @RequestHeader(value = "X-Product-Id") String productId) {
+        return ResponseEntity.ok(configurationService.deployTopicWorkflow(topicId, productId));
     }
 
     /**
@@ -106,5 +108,39 @@ public class MemoConfigurationController {
     public ResponseEntity<List<com.enterprise.memo.dto.WorkflowVariable>> getWorkflowVariables(
             @PathVariable java.util.UUID topicId) {
         return ResponseEntity.ok(configurationService.getWorkflowVariables(topicId));
+    }
+
+    /**
+     * Copy deployed workflow to create a new editable version.
+     * This snapshots the current deployed version to history, then
+     * increments the version number and clears the workflow template ID,
+     * allowing the admin to modify and redeploy the workflow.
+     * 
+     * Existing memos continue using the old deployed version via the snapshot.
+     */
+    @PostMapping("/topics/{topicId}/copy-workflow")
+    public ResponseEntity<MemoTopic> copyTopicWorkflow(@PathVariable java.util.UUID topicId) {
+        return ResponseEntity.ok(configurationService.copyTopicWorkflow(topicId));
+    }
+
+    /**
+     * Get workflow version history for a topic.
+     * Returns all deployed versions with their process template IDs and config
+     * snapshots.
+     */
+    @GetMapping("/topics/{topicId}/versions")
+    public ResponseEntity<java.util.List<com.enterprise.memo.entity.WorkflowVersionHistory>> getWorkflowVersions(
+            @PathVariable java.util.UUID topicId) {
+        return ResponseEntity.ok(configurationService.getWorkflowVersions(topicId));
+    }
+
+    /**
+     * Get a specific workflow version.
+     */
+    @GetMapping("/topics/{topicId}/versions/{version}")
+    public ResponseEntity<com.enterprise.memo.entity.WorkflowVersionHistory> getWorkflowVersion(
+            @PathVariable java.util.UUID topicId,
+            @PathVariable int version) {
+        return ResponseEntity.ok(configurationService.getWorkflowVersion(topicId, version));
     }
 }

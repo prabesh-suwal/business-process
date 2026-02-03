@@ -104,13 +104,15 @@ public class ProcessTemplateController {
         String processKey = request.get("processKey");
         String processName = request.get("processName");
         String bpmnXml = request.get("bpmnXml");
+        String productId = request.get("productId");
 
-        if (processKey == null || bpmnXml == null) {
+        if (processKey == null || bpmnXml == null || productId == null) {
             return ResponseEntity.badRequest().body(java.util.Map.of(
-                    "error", "processKey and bpmnXml are required"));
+                    "error", "processKey, bpmnXml, and productId are required"));
         }
 
-        BpmnDeploymentResult result = processDesignService.deployRawBpmn(processKey, processName, bpmnXml);
+        BpmnDeploymentResult result = processDesignService.deployRawBpmn(
+                processKey, processName, bpmnXml, UUID.fromString(productId));
 
         return ResponseEntity.ok(java.util.Map.of(
                 "processDefinitionId", result.getProcessDefinitionId(),

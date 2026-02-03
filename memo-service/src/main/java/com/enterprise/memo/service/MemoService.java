@@ -67,6 +67,9 @@ public class MemoService {
         memo.setStatus(MemoStatus.DRAFT);
         memo.setCreatedBy(userId);
 
+        // Link memo to current workflow version
+        memo.setWorkflowVersion(topic.getWorkflowVersion() != null ? topic.getWorkflowVersion() : 1);
+
         // Initialize content from template if available
         if (topic.getContentTemplate() != null) {
             memo.setContent(topic.getContentTemplate());

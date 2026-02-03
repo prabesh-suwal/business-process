@@ -28,6 +28,8 @@ public class MemoTaskDTO {
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;
     private LocalDateTime completedAt;
+    private String candidateGroups;
+    private String candidateUsers;
 
     public static MemoTaskDTO fromEntity(MemoTask task) {
         return MemoTaskDTO.builder()
@@ -49,6 +51,8 @@ public class MemoTaskDTO {
                 .createdAt(task.getCreatedAt())
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
+                .candidateGroups(task.getCandidateGroups())
+                .candidateUsers(task.getCandidateUsers())
                 .build();
     }
 }

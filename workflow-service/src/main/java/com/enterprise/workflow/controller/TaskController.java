@@ -97,6 +97,30 @@ public class TaskController {
         return ResponseEntity.ok(taskService.getTasksByProcessInstance(processInstanceId));
     }
 
+    // ==================== PARALLEL EXECUTION TRACKING ====================
+
+    /**
+     * Get parallel execution status for a process instance.
+     * Returns comprehensive info about parallel branches, active tasks, and
+     * completion status.
+     * Supports deep nested parallel gateways.
+     */
+    @GetMapping("/parallel-status/{processInstanceId}")
+    public ResponseEntity<ParallelExecutionStatusDTO> getParallelExecutionStatus(
+            @PathVariable String processInstanceId) {
+        return ResponseEntity.ok(taskService.getParallelExecutionStatus(processInstanceId));
+    }
+
+    /**
+     * Get all active executions (tokens) for a process instance.
+     * Useful for visualizing parallel branches in UI.
+     */
+    @GetMapping("/executions/{processInstanceId}")
+    public ResponseEntity<List<ExecutionDTO>> getActiveExecutions(
+            @PathVariable String processInstanceId) {
+        return ResponseEntity.ok(taskService.getActiveExecutions(processInstanceId));
+    }
+
     /**
      * Get valid return points for a task.
      */
@@ -154,11 +178,15 @@ public class TaskController {
 
     /**
      * Complete a task.
+     * 
+     * @param cancelOthers If true, cancels other parallel tasks (for "first
+     *                     approval wins" mode)
      */
     @PostMapping("/{id}/complete")
     public ResponseEntity<Void> completeTask(
             @PathVariable String id,
             @Valid @RequestBody CompleteTaskRequest request,
+            @RequestParam(required = false, defaultValue = "false") boolean cancelOthers,
             @RequestHeader(value = "X-User-Id") String userId,
             @RequestHeader(value = "X-User-Name", required = false) String userName,
             @RequestHeader(value = "X-User-Roles", required = false) String roles) {
@@ -167,7 +195,11 @@ public class TaskController {
                 ? Arrays.asList(roles.split(","))
                 : List.of();
 
-        taskService.completeTask(id, request, UUID.fromString(userId), userName, roleList);
+        if (cancelOthers) {
+            taskService.completeTaskWithCancellation(id, request, UUID.fromString(userId), userName, roleList, true);
+        } else {
+            taskService.completeTask(id, request, UUID.fromString(userId), userName, roleList);
+        }
         return ResponseEntity.ok().build();
     }
 

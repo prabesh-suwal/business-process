@@ -64,9 +64,14 @@ public class WorkflowClient {
 
         /**
          * Complete a task with variables.
+         * 
+         * @param cancelOthers If true, other parallel tasks will be cancelled (for
+         *                     "first approval wins" mode)
          */
-        public void completeTask(String taskId, String userId, String userName, Map<String, Object> variables) {
-                log.info("Completing task {} with variables for user {}", taskId, userId);
+        public void completeTask(String taskId, String userId, String userName, Map<String, Object> variables,
+                        boolean cancelOthers) {
+                log.info("Completing task {} with variables for user {}, cancelOthers={}", taskId, userId,
+                                cancelOthers);
 
                 // Build CompleteTaskRequest DTO structure expected by workflow-service
                 Map<String, Object> requestBody = new java.util.HashMap<>();
@@ -74,9 +79,14 @@ public class WorkflowClient {
                 requestBody.put("comment", variables != null ? variables.get("comment") : null);
                 requestBody.put("approved", true); // Default to true for now
 
+                String url = workflowServiceUrl + "/api/tasks/" + taskId + "/complete";
+                if (cancelOthers) {
+                        url += "?cancelOthers=true";
+                }
+
                 WebClient.RequestHeadersSpec<?> spec = webClientBuilder.build()
                                 .post()
-                                .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/complete")
+                                .uri(url)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .header("X-User-Id", userId)
                                 .bodyValue(requestBody);
@@ -126,13 +136,14 @@ public class WorkflowClient {
          * Deploy BPMN XML to Flowable engine.
          * Returns both the Flowable process definition ID and ProcessTemplate UUID.
          */
-        public BpmnDeployResult deployBpmn(String processKey, String processName, String bpmnXml) {
-                log.info("Deploying BPMN for process: {} ({})", processName, processKey);
+        public BpmnDeployResult deployBpmn(String processKey, String processName, String bpmnXml, String productId) {
+                log.info("Deploying BPMN for process: {} ({}) with productId: {}", processName, processKey, productId);
 
                 Map<String, Object> request = Map.of(
                                 "processKey", processKey,
                                 "processName", processName,
-                                "bpmnXml", bpmnXml);
+                                "bpmnXml", bpmnXml,
+                                "productId", productId);
 
                 Map<String, Object> response = webClientBuilder.build()
                                 .post()

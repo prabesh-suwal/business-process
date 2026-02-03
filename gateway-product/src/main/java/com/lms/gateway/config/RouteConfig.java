@@ -61,6 +61,12 @@ public class RouteConfig {
                                                                 .removeResponseHeader("WWW-Authenticate"))
                                                 .uri(CAS_URL))
 
+                                .route("auth-refresh", r -> r.path("/auth/refresh").and().method("POST")
+                                                .filters(f -> f.filter(cookiePropagation.apply((Object c) -> {
+                                                }))
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(CAS_URL))
+
                                 // --- MMS (Memo) Routes ---
 
                                 .route("memo-service-memos", r -> r.path("/memos/**")
@@ -98,6 +104,16 @@ public class RouteConfig {
                                                                 }))
                                                                 .rewritePath("/memo/api/tasks(?<segment>/?.*)",
                                                                                 "/api/tasks${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(MEMO_URL))
+
+                                // Memo Topics & Gateway Config - /memo/api/topics/** -> /api/topics/**
+                                .route("memo-topics", r -> r.path("/memo/api/topics/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/memo/api/topics(?<segment>/?.*)",
+                                                                                "/api/topics${segment}")
                                                                 .removeResponseHeader("WWW-Authenticate"))
                                                 .uri(MEMO_URL))
 

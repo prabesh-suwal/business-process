@@ -11,8 +11,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.flowable.engine.TaskService;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskQuery;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.ZoneId;
 import java.util.List;
@@ -35,6 +38,10 @@ public class WorkflowTaskService {
     private final ProcessTemplateFormRepository processTemplateFormRepository;
     private final ActionTimelineRepository actionTimelineRepository;
     private final VariableAuditRepository variableAuditRepository;
+    private final WebClient.Builder webClientBuilder;
+
+    @Value("${memo.service.url:http://localhost:9008}")
+    private String memoServiceUrl;
 
     /**
      * Get tasks assigned to a specific user.
@@ -264,7 +271,185 @@ public class WorkflowTaskService {
                 .build();
         actionTimelineRepository.save(timelineEvent);
 
+        // Notify memo-service of task completion
+        notifyMemoServiceTaskCompleted(taskId, request.isApproved() ? "APPROVE" : "REJECT", userName);
+
         log.info("Task {} completed by user {}. Approved: {}", taskId, userName, request.isApproved());
+    }
+
+    /**
+     * Cancel remaining sibling tasks in the same parallel branch.
+     * Used for "first approval wins" (ANY mode) where completing one branch cancels
+     * others.
+     * 
+     * Instead of deleting tasks (which Flowable doesn't allow for running
+     * processes),
+     * we complete them with a "skipped" status so the parallel join can proceed.
+     * 
+     * @param processInstanceId   The process instance containing parallel tasks
+     * @param completedTaskDefKey The task definition key that was just completed
+     * @param cancelReason        Reason for cancellation (shown in audit)
+     * @return List of cancelled task IDs
+     */
+    public List<String> cancelSiblingParallelTasks(String processInstanceId, String completedTaskDefKey,
+            String cancelReason, UUID cancelledBy, String cancelledByName) {
+
+        // Get all active tasks in this process instance
+        List<Task> activeTasks = taskService.createTaskQuery()
+                .processInstanceId(processInstanceId)
+                .active()
+                .list();
+
+        List<String> cancelledTaskIds = new java.util.ArrayList<>();
+
+        for (Task siblingTask : activeTasks) {
+            // Skip if it's the same task definition (shouldn't happen, but safety check)
+            if (siblingTask.getTaskDefinitionKey().equals(completedTaskDefKey)) {
+                continue;
+            }
+
+            String taskId = siblingTask.getId();
+
+            // Add cancellation comment
+            taskService.addComment(taskId, processInstanceId,
+                    "Task auto-completed (skipped): " + cancelReason + " (parallel branch completed first)");
+
+            // Complete the task with skipped=true so parallel join can proceed
+            // We can't use deleteTask() as Flowable doesn't allow deleting tasks in running
+            // processes
+            Map<String, Object> skipVariables = new java.util.HashMap<>();
+            skipVariables.put("skipped", true);
+            skipVariables.put("skipReason", cancelReason);
+            skipVariables.put("skippedBy", cancelledByName);
+            taskService.complete(taskId, skipVariables);
+
+            // Record in timeline
+            ActionTimeline timelineEvent = ActionTimeline.builder()
+                    .processInstanceId(processInstanceId)
+                    .actionType(ActionTimeline.ActionType.TASK_CANCELLED)
+                    .taskId(taskId)
+                    .taskName(siblingTask.getName())
+                    .actorId(cancelledBy)
+                    .actorName(cancelledByName)
+                    .metadata(Map.of(
+                            "reason", cancelReason,
+                            "triggeredBy", completedTaskDefKey,
+                            "skipped", true))
+                    .build();
+            actionTimelineRepository.save(timelineEvent);
+
+            // Notify memo-service of task cancellation
+            notifyMemoServiceTaskCompleted(taskId, "CANCELLED", cancelledByName);
+
+            cancelledTaskIds.add(taskId);
+            log.info("Skipped parallel task {} ({}) - another branch completed first",
+                    taskId, siblingTask.getName());
+        }
+
+        return cancelledTaskIds;
+    }
+
+    /**
+     * Cancel specific sibling tasks by their IDs.
+     * This is used when we need to cancel only tasks that existed BEFORE a task was
+     * completed,
+     * to avoid accidentally cancelling new tasks created by gateways.
+     */
+    private void cancelSpecificSiblingTasks(String processInstanceId, String completedTaskDefKey,
+            List<String> taskIdsToCancel, String cancelReason, UUID cancelledBy, String cancelledByName) {
+
+        for (String taskId : taskIdsToCancel) {
+            Task siblingTask = taskService.createTaskQuery()
+                    .taskId(taskId)
+                    .singleResult();
+
+            if (siblingTask == null) {
+                log.warn("Task {} no longer exists, skipping cancellation", taskId);
+                continue;
+            }
+
+            // Add cancellation comment
+            taskService.addComment(taskId, processInstanceId,
+                    "Task auto-completed (skipped): " + cancelReason + " (parallel branch completed first)");
+
+            // Complete the task with skipped=true so parallel join can proceed
+            Map<String, Object> skipVariables = new java.util.HashMap<>();
+            skipVariables.put("skipped", true);
+            skipVariables.put("skipReason", cancelReason);
+            skipVariables.put("skippedBy", cancelledByName);
+            taskService.complete(taskId, skipVariables);
+
+            // Record in timeline
+            ActionTimeline timelineEvent = ActionTimeline.builder()
+                    .processInstanceId(processInstanceId)
+                    .actionType(ActionTimeline.ActionType.TASK_CANCELLED)
+                    .taskId(taskId)
+                    .taskName(siblingTask.getName())
+                    .actorId(cancelledBy)
+                    .actorName(cancelledByName)
+                    .metadata(Map.of(
+                            "reason", cancelReason,
+                            "triggeredBy", completedTaskDefKey,
+                            "skipped", true))
+                    .build();
+            actionTimelineRepository.save(timelineEvent);
+
+            // Notify memo-service of task cancellation
+            notifyMemoServiceTaskCompleted(taskId, "CANCELLED", cancelledByName);
+
+            log.info("Skipped parallel task {} ({}) - another branch completed first",
+                    taskId, siblingTask.getName());
+        }
+    }
+
+    /**
+     * Complete a task with "first wins" semantics - cancels other parallel tasks.
+     * Use this for workflows configured with ANY completion mode.
+     * 
+     * IMPORTANT: We capture sibling tasks BEFORE completing the current task,
+     * because completing might trigger new tasks (e.g., after a parallel gateway).
+     */
+    public void completeTaskWithCancellation(String taskId, CompleteTaskRequest request,
+            UUID userId, String userName, List<String> userRoles, boolean cancelOthers) {
+
+        Task task = taskService.createTaskQuery()
+                .taskId(taskId)
+                .singleResult();
+
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        String processInstanceId = task.getProcessInstanceId();
+        String taskDefKey = task.getTaskDefinitionKey();
+
+        // IMPORTANT: Get sibling tasks BEFORE completing the current task!
+        // This prevents us from accidentally cancelling new tasks created by parallel
+        // gateways.
+        List<String> siblingTaskIds = new java.util.ArrayList<>();
+        if (cancelOthers) {
+            List<Task> activeTasks = taskService.createTaskQuery()
+                    .processInstanceId(processInstanceId)
+                    .active()
+                    .list();
+
+            for (Task activeTask : activeTasks) {
+                // Don't include the current task being completed
+                if (!activeTask.getId().equals(taskId)) {
+                    siblingTaskIds.add(activeTask.getId());
+                }
+            }
+            log.info("Found {} sibling tasks to cancel: {}", siblingTaskIds.size(), siblingTaskIds);
+        }
+
+        // Now complete the current task
+        completeTask(taskId, request, userId, userName, userRoles);
+
+        // Then, if there were sibling tasks, cancel them
+        if (cancelOthers && !siblingTaskIds.isEmpty()) {
+            cancelSpecificSiblingTasks(processInstanceId, taskDefKey, siblingTaskIds,
+                    "First approval received", userId, userName);
+        }
     }
 
     /**
@@ -370,6 +555,276 @@ public class WorkflowTaskService {
         return actionTimelineRepository.findByProcessInstanceIdOrderByCreatedAtDesc(processInstanceId);
     }
 
+    // ==================== PARALLEL EXECUTION TRACKING ====================
+
+    /**
+     * Get parallel execution status for a process instance.
+     * Supports deep nested parallel gateways with hierarchical tracking.
+     */
+    @Transactional(readOnly = true)
+    public ParallelExecutionStatusDTO getParallelExecutionStatus(String processInstanceId) {
+        log.debug("Getting parallel execution status for process: {}", processInstanceId);
+
+        // Get all executions for this process
+        List<org.flowable.engine.runtime.Execution> executions = runtimeService.createExecutionQuery()
+                .processInstanceId(processInstanceId)
+                .list();
+
+        if (executions.isEmpty()) {
+            return ParallelExecutionStatusDTO.builder()
+                    .processInstanceId(processInstanceId)
+                    .isInParallelExecution(false)
+                    .totalBranches(0)
+                    .completedBranches(0)
+                    .activeBranches(0)
+                    .activeTasks(List.of())
+                    .allActiveExecutions(List.of())
+                    .maxNestingDepth(0)
+                    .gateways(Map.of())
+                    .build();
+        }
+
+        // Build execution hierarchy
+        java.util.Map<String, ExecutionDTO> executionMap = new java.util.HashMap<>();
+        java.util.Map<String, List<ExecutionDTO>> childrenMap = new java.util.HashMap<>();
+
+        for (org.flowable.engine.runtime.Execution exec : executions) {
+            // Flowable Execution interface - derive active from !isEnded() and activityId
+            // presence
+            boolean isActive = exec.getActivityId() != null && !exec.isEnded();
+            // Scope: use parent check as proxy (root execution has no parent)
+            boolean isScope = exec.getParentId() == null || exec.getId().equals(exec.getProcessInstanceId());
+
+            ExecutionDTO dto = ExecutionDTO.builder()
+                    .executionId(exec.getId())
+                    .parentExecutionId(exec.getParentId())
+                    .processInstanceId(exec.getProcessInstanceId())
+                    .activityId(exec.getActivityId())
+                    .activityName(getActivityName(processInstanceId, exec.getActivityId()))
+                    .activityType(getActivityType(processInstanceId, exec.getActivityId()))
+                    .active(isActive)
+                    .ended(exec.isEnded())
+                    .scope(isScope)
+                    .nestingLevel(0) // Will calculate later
+                    .childExecutions(new java.util.ArrayList<>())
+                    .build();
+
+            executionMap.put(exec.getId(), dto);
+
+            if (exec.getParentId() != null) {
+                childrenMap.computeIfAbsent(exec.getParentId(), k -> new java.util.ArrayList<>()).add(dto);
+            }
+        }
+
+        // Build tree and calculate nesting levels
+        ExecutionDTO rootExecution = null;
+        for (ExecutionDTO dto : executionMap.values()) {
+            if (dto.getParentExecutionId() == null || dto.getExecutionId().equals(processInstanceId)) {
+                rootExecution = dto;
+            }
+            List<ExecutionDTO> children = childrenMap.get(dto.getExecutionId());
+            if (children != null) {
+                dto.setChildExecutions(children);
+            }
+        }
+
+        // Calculate nesting levels
+        int maxNestingDepth = calculateNestingLevels(rootExecution, 0);
+
+        // Get active tasks
+        List<Task> activeTasks = taskService.createTaskQuery()
+                .processInstanceId(processInstanceId)
+                .list();
+
+        List<TaskDTO> activeTaskDTOs = activeTasks.stream()
+                .map(this::toDTO)
+                .collect(java.util.stream.Collectors.toList());
+
+        // Calculate branch counts
+        List<ExecutionDTO> activeExecutions = executionMap.values().stream()
+                .filter(e -> e.isActive() && e.getActivityId() != null)
+                .collect(java.util.stream.Collectors.toList());
+
+        // Detect parallel execution: more than 1 active execution with activities
+        boolean isInParallel = activeExecutions.size() > 1 ||
+                executions.stream().anyMatch(e -> getActivityType(processInstanceId, e.getActivityId()) != null &&
+                        getActivityType(processInstanceId, e.getActivityId()).contains("parallelGateway"));
+
+        // Get gateway completion info
+        java.util.Map<String, ParallelExecutionStatusDTO.GatewayCompletionInfo> gateways = getGatewayCompletionInfo(
+                processInstanceId, executions);
+
+        return ParallelExecutionStatusDTO.builder().processInstanceId(processInstanceId)
+                .isInParallelExecution(isInParallel).totalBranches(activeExecutions.size() +
+
+                        getCompletedBranchCount(processInstanceId))
+                .completedBranches(getCompletedBranchCount(processInstanceId))
+                .activeBranches(activeExecutions.size())
+                .activeTasks(activeTaskDTOs)
+                .executionTree(rootExecution)
+                .allActiveExecutions(activeExecutions)
+                .maxNestingDepth(maxNestingDepth)
+                .gateways(gateways)
+                .build();
+    }
+
+    /**
+     * Get all active executions for a process (flat list).
+     */
+    @Transactional(readOnly = true)
+    public List<ExecutionDTO> getActiveExecutions(String processInstanceId) {
+        List<org.flowable.engine.runtime.Execution> executions = runtimeService.createExecutionQuery()
+                .processInstanceId(processInstanceId)
+                .onlyChildExecutions()
+                .list();
+
+        List<ExecutionDTO> result = new java.util.ArrayList<>();
+        for (org.flowable.engine.runtime.Execution exec : executions) {
+            boolean isActive = exec.getActivityId() != null && !exec.isEnded();
+            boolean isScope = exec.getParentId() == null;
+
+            result.add(ExecutionDTO.builder()
+                    .executionId(exec.getId())
+                    .parentExecutionId(exec.getParentId())
+                    .processInstanceId(exec.getProcessInstanceId())
+                    .activityId(exec.getActivityId())
+                    .activityName(getActivityName(processInstanceId, exec.getActivityId()))
+                    .activityType(getActivityType(processInstanceId, exec.getActivityId()))
+                    .active(isActive)
+                    .ended(exec.isEnded())
+                    .scope(isScope)
+                    .nestingLevel(calculateExecutionNestingLevel(exec.getId(), processInstanceId))
+                    .build());
+        }
+        return result;
+    }
+
+    private int calculateNestingLevels(ExecutionDTO dto, int currentLevel) {
+        if (dto == null)
+            return currentLevel;
+        dto.setNestingLevel(currentLevel);
+
+        int maxChildLevel = currentLevel;
+        if (dto.getChildExecutions() != null) {
+            for (ExecutionDTO child : dto.getChildExecutions()) {
+                int childLevel = calculateNestingLevels(child, currentLevel + 1);
+                maxChildLevel = Math.max(maxChildLevel, childLevel);
+            }
+        }
+        return maxChildLevel;
+    }
+
+    private int calculateExecutionNestingLevel(String executionId, String processInstanceId) {
+        int level = 0;
+        String currentId = executionId;
+        while (currentId != null && !currentId.equals(processInstanceId)) {
+            org.flowable.engine.runtime.Execution exec = runtimeService.createExecutionQuery()
+                    .executionId(currentId)
+                    .singleResult();
+            if (exec == null)
+                break;
+            currentId = exec.getParentId();
+            level++;
+        }
+        return level;
+    }
+
+    private String getActivityName(String processInstanceId, String activityId) {
+        if (activityId == null)
+            return null;
+        try {
+            org.flowable.engine.runtime.ProcessInstance pi = runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .singleResult();
+            if (pi != null) {
+                org.flowable.bpmn.model.BpmnModel model = org.flowable.engine.ProcessEngines.getDefaultProcessEngine()
+                        .getRepositoryService()
+                        .getBpmnModel(pi.getProcessDefinitionId());
+                org.flowable.bpmn.model.FlowElement element = model.getFlowElement(activityId);
+                return element != null ? element.getName() : activityId;
+            }
+        } catch (Exception e) {
+            log.trace("Could not get activity name: {}", e.getMessage());
+        }
+        return activityId;
+    }
+
+    private String getActivityType(String processInstanceId, String activityId) {
+        if (activityId == null)
+            return null;
+        try {
+            org.flowable.engine.runtime.ProcessInstance pi = runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .singleResult();
+            if (pi != null) {
+                org.flowable.bpmn.model.BpmnModel model = org.flowable.engine.ProcessEngines.getDefaultProcessEngine()
+                        .getRepositoryService()
+                        .getBpmnModel(pi.getProcessDefinitionId());
+                org.flowable.bpmn.model.FlowElement element = model.getFlowElement(activityId);
+                return element != null ? element.getClass().getSimpleName() : null;
+            }
+        } catch (Exception e) {
+            log.trace("Could not get activity type: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private int getCompletedBranchCount(String processInstanceId) {
+        // Query historical completed activities that are join gateways
+        // This is a simplified version; in production, you'd track this more explicitly
+        return 0; // Will be enhanced with actual tracking
+    }
+
+    private java.util.Map<String, ParallelExecutionStatusDTO.GatewayCompletionInfo> getGatewayCompletionInfo(
+            String processInstanceId, List<org.flowable.engine.runtime.Execution> executions) {
+        java.util.Map<String, ParallelExecutionStatusDTO.GatewayCompletionInfo> result = new java.util.HashMap<>();
+
+        // Find executions waiting at gateways
+        for (org.flowable.engine.runtime.Execution exec : executions) {
+            String activityType = getActivityType(processInstanceId, exec.getActivityId());
+            if (activityType != null && activityType.contains("Gateway")) {
+                String gatewayId = exec.getActivityId();
+                if (!result.containsKey(gatewayId)) {
+                    result.put(gatewayId, ParallelExecutionStatusDTO.GatewayCompletionInfo.builder()
+                            .gatewayId(gatewayId)
+                            .gatewayType(activityType)
+                            .totalIncoming(getGatewayIncomingCount(processInstanceId, gatewayId))
+                            .completedIncoming(countExecutionsAtGateway(executions, gatewayId))
+                            .satisfied(false) // Will be calculated
+                            .build());
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private int getGatewayIncomingCount(String processInstanceId, String gatewayId) {
+        try {
+            org.flowable.engine.runtime.ProcessInstance pi = runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId)
+                    .singleResult();
+            if (pi != null) {
+                org.flowable.bpmn.model.BpmnModel model = org.flowable.engine.ProcessEngines.getDefaultProcessEngine()
+                        .getRepositoryService()
+                        .getBpmnModel(pi.getProcessDefinitionId());
+                org.flowable.bpmn.model.FlowElement element = model.getFlowElement(gatewayId);
+                if (element instanceof org.flowable.bpmn.model.Gateway gateway) {
+                    return gateway.getIncomingFlows().size();
+                }
+            }
+        } catch (Exception e) {
+            log.trace("Could not get gateway incoming count: {}", e.getMessage());
+        }
+        return 0;
+    }
+
+    private int countExecutionsAtGateway(List<org.flowable.engine.runtime.Execution> executions, String gatewayId) {
+        return (int) executions.stream()
+                .filter(e -> gatewayId.equals(e.getActivityId()))
+                .count();
+    }
+
     private TaskDTO toDTO(Task task) {
         // Try to get process metadata for additional context
         ProcessInstanceMetadata metadata = null;
@@ -422,5 +877,30 @@ public class WorkflowTaskService {
                 .taskDefinitionKey(task.getTaskDefinitionKey())
                 .formDefinitionId(formDefinitionId)
                 .build();
+    }
+
+    /**
+     * Notify memo-service that a task has been completed.
+     */
+    private void notifyMemoServiceTaskCompleted(String taskId, String action, String completedBy) {
+        try {
+            Map<String, String> payload = Map.of(
+                    "taskId", taskId,
+                    "action", action,
+                    "completedBy", completedBy != null ? completedBy : "");
+
+            webClientBuilder.build()
+                    .post()
+                    .uri(memoServiceUrl + "/api/workflow-webhook/task-completed")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(Void.class)
+                    .block();
+
+            log.info("Notified memo-service of task completion: {}", taskId);
+        } catch (Exception e) {
+            log.warn("Failed to notify memo-service of task completion: {}", e.getMessage());
+        }
     }
 }

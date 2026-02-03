@@ -3,7 +3,7 @@ import { TaskApi } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Loader2, Eye, Search, Filter, Inbox, Clock, ArrowRight, Sparkles } from 'lucide-react';
+import { Loader2, Eye, Search, Filter, Inbox, Clock, ArrowRight, Sparkles, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -70,8 +70,8 @@ export default function TaskInbox() {
                             size="sm"
                             onClick={() => setFilterPriority('ALL')}
                             className={`rounded-lg px-4 transition-all ${filterPriority === 'ALL'
-                                    ? 'bg-white text-slate-900 shadow-sm'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/10'
+                                ? 'bg-white text-slate-900 shadow-sm'
+                                : 'text-slate-400 hover:text-white hover:bg-white/10'
                                 }`}
                         >
                             All Tasks
@@ -84,8 +84,8 @@ export default function TaskInbox() {
                             size="sm"
                             onClick={() => setFilterPriority('HIGH')}
                             className={`rounded-lg px-4 transition-all ${filterPriority === 'HIGH'
-                                    ? 'bg-amber-500 text-white shadow-sm'
-                                    : 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10'
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10'
                                 }`}
                         >
                             High Priority
@@ -95,8 +95,8 @@ export default function TaskInbox() {
                             size="sm"
                             onClick={() => setFilterPriority('URGENT')}
                             className={`rounded-lg px-4 transition-all ${filterPriority === 'URGENT'
-                                    ? 'bg-red-500 text-white shadow-sm'
-                                    : 'text-slate-400 hover:text-red-400 hover:bg-red-500/10'
+                                ? 'bg-red-500 text-white shadow-sm'
+                                : 'text-slate-400 hover:text-red-400 hover:bg-red-500/10'
                                 }`}
                         >
                             Urgent
@@ -159,10 +159,17 @@ export default function TaskInbox() {
                                             <div className="font-semibold text-slate-900 leading-snug group-hover:text-blue-700 transition-colors">
                                                 {task.name || task.processTemplateName}
                                             </div>
-                                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
                                                 <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-600 font-medium">
                                                     {task.category || 'Memo'}
                                                 </span>
+                                                {/* Parallel workflow indicator */}
+                                                {task.isParallelExecution && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md font-medium">
+                                                        <GitBranch className="w-3 h-3" />
+                                                        {task.parallelProgress || 'Multiple approvals'}
+                                                    </span>
+                                                )}
                                             </div>
                                         </TableCell>
                                         <TableCell>

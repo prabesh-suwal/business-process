@@ -23,6 +23,7 @@ public class MemoConfigurationService {
     private final MemoTopicRepository topicRepository;
     private final com.enterprise.memo.client.WorkflowClient workflowClient;
     private final WorkflowConfigService workflowConfigService;
+    private final com.enterprise.memo.repository.WorkflowVersionHistoryRepository versionHistoryRepository;
 
     public MemoCategory createCategory(CreateCategoryRequest request) {
         if (categoryRepository.existsByCode(request.getCode())) {
@@ -76,6 +77,13 @@ public class MemoConfigurationService {
 
     public MemoTopic updateTopicWorkflow(java.util.UUID topicId, String workflowXml) {
         MemoTopic topic = getTopic(topicId);
+
+        // Reject edit if workflow is already deployed (locked)
+        if (topic.isWorkflowDeployed()) {
+            throw new IllegalStateException(
+                    "Cannot modify deployed workflow. Use 'Copy to New Version' to create an editable copy.");
+        }
+
         topic.setWorkflowXml(workflowXml);
         return topicRepository.save(topic);
     }
@@ -100,25 +108,28 @@ public class MemoConfigurationService {
      * BPMN is enriched with task listeners before deployment to enable
      * dynamic assignment via webhook callbacks.
      */
-    public MemoTopic deployTopicWorkflow(java.util.UUID topicId) {
+    public MemoTopic deployTopicWorkflow(java.util.UUID topicId, String productId) {
         MemoTopic topic = getTopic(topicId);
 
         if (topic.getWorkflowXml() == null || topic.getWorkflowXml().isBlank()) {
             throw new IllegalStateException("No workflow BPMN defined for topic: " + topic.getName());
         }
 
-        log.info("Deploying workflow for topic: {} ({})", topic.getName(), topicId);
+        log.info("Deploying workflow for topic: {} ({}) with productId: {}", topic.getName(), topicId,
+                productId);
 
         // Enrich BPMN with task listeners and branching conditions
         java.util.List<com.enterprise.memo.entity.WorkflowStepConfig> stepConfigs = workflowConfigService
                 .getStepConfigs(topicId);
-        String enrichedXml = com.enterprise.memo.util.BpmnEnricher.enrichBpmn(topic.getWorkflowXml(), stepConfigs);
+        String enrichedXml = com.enterprise.memo.util.BpmnEnricher.enrichBpmn(topic.getWorkflowXml(),
+                stepConfigs);
 
         // Call workflow-service to deploy the enriched BPMN
         com.enterprise.memo.client.WorkflowClient.BpmnDeployResult deployResult = workflowClient.deployBpmn(
                 topic.getCode(),
                 topic.getName() + " Workflow",
-                enrichedXml);
+                enrichedXml,
+                productId);
 
         // Store the ProcessTemplate UUID (for centralized assignment resolution)
         // The Flowable processDefinitionId is in the ProcessTemplate record
@@ -152,6 +163,12 @@ public class MemoConfigurationService {
         MemoTopic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new RuntimeException("Topic not found: " + topicId));
 
+        // Reject edit if workflow is already deployed (locked)
+        if (topic.isWorkflowDeployed()) {
+            throw new IllegalStateException(
+                    "Cannot modify deployed workflow. Use 'Copy to New Version' to create an editable copy.");
+        }
+
         topic.setOverridePermissions(overridePermissions);
         log.info("Updated override permissions for topic: {}", topicId);
 
@@ -178,17 +195,20 @@ public class MemoConfigurationService {
         variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
                 .name("memo.dueDate").label("Due Date").type("date").source("memo").build());
         variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
-                .name("memo.attachmentCount").label("Number of Attachments").type("number").source("memo").build());
+                .name("memo.attachmentCount").label("Number of Attachments").type("number")
+                .source("memo").build());
 
         // 2. Initiator context (always available)
         variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
                 .name("initiator.role").label("Initiator Role").type("enum").source("initiator")
                 .options(List.of("OFFICER", "MANAGER", "DIRECTOR", "VP", "CEO")).build());
         variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
-                .name("initiator.department").label("Initiator Department").type("enum").source("initiator")
+                .name("initiator.department").label("Initiator Department").type("enum")
+                .source("initiator")
                 .options(List.of("IT", "HR", "FINANCE", "OPERATIONS", "MARKETING", "LEGAL")).build());
         variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
-                .name("initiator.branch").label("Initiator Branch").type("text").source("initiator").build());
+                .name("initiator.branch").label("Initiator Branch").type("text").source("initiator")
+                .build());
 
         // 3. Form fields from topic's form schema (dynamic per topic)
         if (topic.getFormSchema() != null && !topic.getFormSchema().isEmpty()) {
@@ -241,5 +261,132 @@ public class MemoConfigurationService {
             case "checkbox", "toggle" -> "boolean";
             default -> "text";
         };
+    }
+
+    /**
+     * Copy workflow to a new version.
+     * BEFORE incrementing version, snapshots current deployed state to history
+     * table.
+     * This preserves the processTemplateId for running memo instances.
+     * 
+     * Creates a new editable copy of the deployed workflow with:
+     * - Snapshot of current version saved to workflow_version_history
+     * - Incremented version number
+     * - Cleared workflow_template_id (draft state)
+     * - Copied workflow_xml
+     * - Step configs and gateway rules carry forward (topic-bound)
+     * 
+     * @param topicId The topic to copy workflow from
+     * @return The topic with new version (draft, editable)
+     */
+    public MemoTopic copyTopicWorkflow(java.util.UUID topicId) {
+        MemoTopic topic = getTopic(topicId);
+
+        if (!topic.isWorkflowDeployed()) {
+            throw new IllegalStateException(
+                    "Workflow is not deployed. Edit the current draft instead of copying.");
+        }
+
+        int currentVersion = topic.getWorkflowVersion() != null ? topic.getWorkflowVersion() : 1;
+
+        log.info("Snapshotting workflow version {} for topic: {} before creating new version",
+                currentVersion, topic.getName());
+
+        // Snapshot current deployed version to history
+        snapshotCurrentVersion(topic, currentVersion);
+
+        // Increment version on topic
+        int newVersion = currentVersion + 1;
+        topic.setWorkflowVersion(newVersion);
+
+        // Clear workflow template ID (makes it draft/editable)
+        // The old templateId is now preserved in the version history
+        topic.setWorkflowTemplateId(null);
+        // workflow_xml is kept as-is for editing
+
+        topic = topicRepository.save(topic);
+        log.info("Created workflow version {} for topic: {} (now editable). Version {} preserved in history.",
+                newVersion, topic.getName(), currentVersion);
+
+        return topic;
+    }
+
+    /**
+     * Snapshot the current deployed workflow version to history table.
+     */
+    private void snapshotCurrentVersion(MemoTopic topic, int version) {
+        // Check if this version is already snapshotted
+        if (versionHistoryRepository.findByTopicIdAndVersion(topic.getId(), version).isPresent()) {
+            log.info("Version {} already snapshotted for topic {}", version, topic.getId());
+            return;
+        }
+
+        // Get current step configs
+        java.util.List<com.enterprise.memo.entity.WorkflowStepConfig> stepConfigs = workflowConfigService
+                .getStepConfigs(topic.getId());
+
+        // Convert step configs to snapshot format
+        java.util.Map<String, Object> stepConfigsSnapshot = new java.util.HashMap<>();
+        for (var config : stepConfigs) {
+            java.util.Map<String, Object> configMap = new java.util.HashMap<>();
+            configMap.put("taskName", config.getTaskName());
+            configMap.put("assignmentConfig", config.getAssignmentConfig());
+            configMap.put("slaConfig", config.getSlaConfig());
+            configMap.put("escalationConfig", config.getEscalationConfig());
+            configMap.put("viewerConfig", config.getViewerConfig());
+            configMap.put("conditionConfig", config.getConditionConfig());
+            stepConfigsSnapshot.put(config.getTaskKey(), configMap);
+        }
+
+        // Get current gateway rules
+        java.util.List<com.enterprise.memo.entity.GatewayDecisionRule> gatewayRules = workflowConfigService
+                .getGatewayRules(topic.getId());
+
+        // Convert gateway rules to snapshot format
+        java.util.Map<String, Object> gatewayRulesSnapshot = new java.util.HashMap<>();
+        for (var rule : gatewayRules) {
+            java.util.Map<String, Object> ruleMap = new java.util.HashMap<>();
+            ruleMap.put("gatewayKey", rule.getGatewayKey());
+            ruleMap.put("gatewayName", rule.getGatewayName());
+            ruleMap.put("rules", rule.getRules());
+            ruleMap.put("defaultFlow", rule.getDefaultFlow());
+            ruleMap.put("version", rule.getVersion());
+            ruleMap.put("active", rule.getActive());
+            gatewayRulesSnapshot.put(rule.getGatewayKey(), ruleMap);
+        }
+
+        // Create version history record
+        com.enterprise.memo.entity.WorkflowVersionHistory history = com.enterprise.memo.entity.WorkflowVersionHistory
+                .builder()
+                .topicId(topic.getId())
+                .version(version)
+                .workflowXml(topic.getWorkflowXml())
+                .workflowTemplateId(topic.getWorkflowTemplateId())
+                .stepConfigsSnapshot(stepConfigsSnapshot)
+                .gatewayRulesSnapshot(gatewayRulesSnapshot)
+                .deployedAt(java.time.LocalDateTime.now())
+                .build();
+
+        versionHistoryRepository.save(history);
+        log.info("Snapshotted version {} with processTemplateId {} for topic {}",
+                version, topic.getWorkflowTemplateId(), topic.getName());
+    }
+
+    /**
+     * Get workflow version history for a topic.
+     */
+    public java.util.List<com.enterprise.memo.entity.WorkflowVersionHistory> getWorkflowVersions(
+            java.util.UUID topicId) {
+        return versionHistoryRepository.findByTopicIdOrderByVersionDesc(topicId);
+    }
+
+    /**
+     * Get a specific workflow version.
+     */
+    public com.enterprise.memo.entity.WorkflowVersionHistory getWorkflowVersion(java.util.UUID topicId,
+            int version) {
+        return versionHistoryRepository.findByTopicIdAndVersion(topicId, version)
+                .orElseThrow(() -> new RuntimeException(
+                        "Workflow version " + version + " not found for topic " + topicId));
     }
 }
