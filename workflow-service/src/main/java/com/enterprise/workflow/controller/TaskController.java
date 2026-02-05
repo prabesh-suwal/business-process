@@ -1,5 +1,7 @@
 package com.enterprise.workflow.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.workflow.dto.*;
 import com.enterprise.workflow.service.WorkflowTaskService;
 import jakarta.validation.Valid;
@@ -7,7 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,10 +28,9 @@ public class TaskController {
      * Get tasks assigned to current user.
      */
     @GetMapping("/assigned")
-    public ResponseEntity<List<TaskDTO>> getAssignedTasks(
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
-
-        return ResponseEntity.ok(taskService.getAssignedTasks(userId));
+    public ResponseEntity<List<TaskDTO>> getAssignedTasks() {
+        UserContext user = UserContextHolder.require();
+        return ResponseEntity.ok(taskService.getAssignedTasks(user.getUserId()));
     }
 
     /**
@@ -37,43 +38,35 @@ public class TaskController {
      * compatibility).
      */
     @GetMapping("/my")
-    public ResponseEntity<List<TaskDTO>> getMyTasks(
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
-
-        return ResponseEntity.ok(taskService.getAssignedTasks(userId));
+    public ResponseEntity<List<TaskDTO>> getMyTasks() {
+        UserContext user = UserContextHolder.require();
+        return ResponseEntity.ok(taskService.getAssignedTasks(user.getUserId()));
     }
 
     /**
      * Get tasks that current user can claim.
      */
     @GetMapping("/claimable")
-    public ResponseEntity<List<TaskDTO>> getClaimableTasks(
-            @RequestHeader(value = "X-User-Id") String userId,
-            @RequestHeader(value = "X-User-Roles", required = false) String roles) {
-
-        List<String> roleList = roles != null
-                ? Arrays.asList(roles.split(","))
-                : List.of();
-
-        return ResponseEntity.ok(taskService.getCandidateTasks(userId, roleList));
+    public ResponseEntity<List<TaskDTO>> getClaimableTasks() {
+        UserContext user = UserContextHolder.require();
+        List<String> roleList = new ArrayList<>(user.getRoles());
+        return ResponseEntity.ok(taskService.getCandidateTasks(user.getUserId(), roleList));
     }
 
     /**
      * Get all tasks for current user (assigned + claimable).
      */
     @GetMapping("/inbox")
-    public ResponseEntity<List<TaskDTO>> getInbox(
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
-            @RequestHeader(value = "X-User-Roles", required = false) String roles) {
+    public ResponseEntity<List<TaskDTO>> getInbox() {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        List<String> roleList = new ArrayList<>(user.getRoleIds());
 
         List<TaskDTO> assigned = taskService.getAssignedTasks(userId);
-        List<String> roleList = roles != null
-                ? Arrays.asList(roles.split(","))
-                : List.of();
         List<TaskDTO> claimable = taskService.getCandidateTasks(userId, roleList);
 
         // Combine and return
-        List<TaskDTO> inbox = new java.util.ArrayList<>(assigned);
+        List<TaskDTO> inbox = new ArrayList<>(assigned);
         inbox.addAll(claimable);
         return ResponseEntity.ok(inbox);
     }
@@ -82,10 +75,9 @@ public class TaskController {
      * Get tasks by product (for product-specific inbox).
      */
     @GetMapping("/by-product")
-    public ResponseEntity<List<TaskDTO>> getTasksByProduct(
-            @RequestParam UUID productId,
-            @RequestHeader(value = "X-User-Id", required = false) String assignee) {
-
+    public ResponseEntity<List<TaskDTO>> getTasksByProduct(@RequestParam UUID productId) {
+        UserContext user = UserContextHolder.getContext();
+        String assignee = user != null ? user.getUserId() : null;
         return ResponseEntity.ok(taskService.getTasksByProduct(productId, assignee));
     }
 
@@ -136,9 +128,10 @@ public class TaskController {
     @PostMapping("/{taskId}/send-back")
     public ResponseEntity<Void> sendBackTask(
             @PathVariable String taskId,
-            @RequestBody SendBackRequest request,
-            @RequestHeader(value = "X-User-Id") String userId,
-            @RequestHeader(value = "X-User-Name", defaultValue = "Unknown") String userName) {
+            @RequestBody SendBackRequest request) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName() != null ? user.getName() : "Unknown";
 
         taskService.sendBackTask(taskId, request.getTargetActivityId(), request.getReason(), userId, userName);
         return ResponseEntity.ok().build();
@@ -156,10 +149,10 @@ public class TaskController {
      * Claim a task.
      */
     @PostMapping("/{id}/claim")
-    public ResponseEntity<TaskDTO> claimTask(
-            @PathVariable String id,
-            @RequestHeader(value = "X-User-Id") String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+    public ResponseEntity<TaskDTO> claimTask(@PathVariable String id) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName();
 
         return ResponseEntity.ok(taskService.claimTask(id, userId, userName));
     }
@@ -168,11 +161,9 @@ public class TaskController {
      * Unclaim (release) a task back to the pool.
      */
     @PostMapping("/{id}/unclaim")
-    public ResponseEntity<Void> unclaimTask(
-            @PathVariable String id,
-            @RequestHeader(value = "X-User-Id") String userId) {
-
-        taskService.unclaimTask(id, userId);
+    public ResponseEntity<Void> unclaimTask(@PathVariable String id) {
+        UserContext user = UserContextHolder.require();
+        taskService.unclaimTask(id, user.getUserId());
         return ResponseEntity.ok().build();
     }
 
@@ -181,22 +172,33 @@ public class TaskController {
      * 
      * @param cancelOthers If true, cancels other parallel tasks (for "first
      *                     approval wins" mode)
+     * @param gatewayId    Optional. If provided with cancelOthers=true, only
+     *                     cancels tasks
+     *                     within this gateway's scope. This is required for nested
+     *                     gateway support.
      */
     @PostMapping("/{id}/complete")
     public ResponseEntity<Void> completeTask(
             @PathVariable String id,
             @Valid @RequestBody CompleteTaskRequest request,
             @RequestParam(required = false, defaultValue = "false") boolean cancelOthers,
-            @RequestHeader(value = "X-User-Id") String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName,
-            @RequestHeader(value = "X-User-Roles", required = false) String roles) {
+            @RequestParam(required = false) String gatewayId) {
 
-        List<String> roleList = roles != null
-                ? Arrays.asList(roles.split(","))
-                : List.of();
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName();
+        List<String> roleList = new ArrayList<>(user.getRoles());
 
         if (cancelOthers) {
-            taskService.completeTaskWithCancellation(id, request, UUID.fromString(userId), userName, roleList, true);
+            if (gatewayId != null && !gatewayId.isEmpty()) {
+                // Gateway-scoped cancellation (preferred for nested gateway support)
+                taskService.completeTaskWithGatewayScopedCancellation(
+                        id, request, UUID.fromString(userId), userName, roleList, gatewayId);
+            } else {
+                // Legacy: cancel ALL other tasks (doesn't support nested gateways well)
+                taskService.completeTaskWithCancellation(id, request, UUID.fromString(userId), userName, roleList,
+                        true);
+            }
         } else {
             taskService.completeTask(id, request, UUID.fromString(userId), userName, roleList);
         }
@@ -209,9 +211,10 @@ public class TaskController {
     @PostMapping("/{id}/delegate")
     public ResponseEntity<Void> delegateTask(
             @PathVariable String id,
-            @RequestParam String delegateTo,
-            @RequestHeader(value = "X-User-Id") String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+            @RequestParam String delegateTo) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName();
 
         taskService.delegateTask(id, delegateTo, UUID.fromString(userId), userName);
         return ResponseEntity.ok().build();
@@ -239,14 +242,15 @@ public class TaskController {
     @PostMapping("/{id}/vote")
     public ResponseEntity<CommitteeVoteDTO> castVote(
             @PathVariable String id,
-            @RequestBody VoteRequest request,
-            @RequestHeader(value = "X-User-Id") String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+            @RequestBody VoteRequest request) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName() != null ? user.getName() : "Unknown";
 
         CommitteeVoteDTO result = committeeVotingService.castVote(
                 id,
                 userId,
-                userName != null ? userName : "Unknown",
+                userName,
                 request.getDecision(),
                 request.getComment());
 

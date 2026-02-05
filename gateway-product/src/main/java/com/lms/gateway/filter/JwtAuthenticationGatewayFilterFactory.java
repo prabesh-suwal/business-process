@@ -146,10 +146,16 @@ public class JwtAuthenticationGatewayFilterFactory
 
                             // Extract roles from all products
                             Set<String> roles = new HashSet<>();
+                            Set<String> roleIds = new HashSet<>();
                             products.values().forEach(p -> {
                                 List<String> productRoles = (List<String>) p.get("roles");
                                 if (productRoles != null) {
                                     roles.addAll(productRoles);
+                                }
+                                // Also extract roleIds (UUIDs) for candidate group matching
+                                List<String> productRoleIds = (List<String>) p.get("roleIds");
+                                if (productRoleIds != null) {
+                                    roleIds.addAll(productRoleIds);
                                 }
                             });
 
@@ -157,6 +163,11 @@ public class JwtAuthenticationGatewayFilterFactory
                                 String rolesString = String.join(",", roles);
                                 r.header("X-Roles", rolesString);
                                 r.header("X-User-Roles", rolesString); // For workflow-service compatibility
+                            }
+
+                            if (!roleIds.isEmpty()) {
+                                String roleIdsString = String.join(",", roleIds);
+                                r.header("X-Role-Ids", roleIdsString);
                             }
 
                         } else if ("SERVICE".equals(type)) {

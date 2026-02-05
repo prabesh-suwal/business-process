@@ -12,6 +12,7 @@ import org.flowable.engine.TaskService;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskQuery;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,8 @@ public class WorkflowTaskService {
     private final ActionTimelineRepository actionTimelineRepository;
     private final VariableAuditRepository variableAuditRepository;
     private final WebClient.Builder webClientBuilder;
+    @Lazy
+    private final ProcessAnalyzerService processAnalyzerService;
 
     @Value("${memo.service.url:http://localhost:9008}")
     private String memoServiceUrl;
@@ -450,6 +453,122 @@ public class WorkflowTaskService {
             cancelSpecificSiblingTasks(processInstanceId, taskDefKey, siblingTaskIds,
                     "First approval received", userId, userName);
         }
+    }
+
+    /**
+     * Complete a task with gateway-scoped "ANY" mode cancellation.
+     * 
+     * This is the PREFERRED method for ANY completion mode as it supports NESTED
+     * GATEWAYS.
+     * Only cancels tasks that are within the same gateway scope, not tasks in
+     * parent
+     * or child gateway scopes.
+     * 
+     * @param taskId    The task being completed
+     * @param request   The completion request with variables
+     * @param userId    User completing the task
+     * @param userName  User's display name
+     * @param userRoles User's roles
+     * @param gatewayId The parallel gateway ID that defines the scope
+     */
+    public void completeTaskWithGatewayScopedCancellation(String taskId, CompleteTaskRequest request,
+            UUID userId, String userName, List<String> userRoles, String gatewayId) {
+
+        Task task = taskService.createTaskQuery()
+                .taskId(taskId)
+                .singleResult();
+
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        String processInstanceId = task.getProcessInstanceId();
+        String taskDefKey = task.getTaskDefinitionKey();
+
+        // Use ProcessAnalyzerService to find only sibling tasks in the same gateway
+        // scope
+        List<String> tasksToCancel = processAnalyzerService.getSiblingBranchTasksToCancel(
+                processInstanceId, taskId, gatewayId);
+
+        log.info("Found {} tasks to cancel in gateway {} scope: {}",
+                tasksToCancel.size(), gatewayId, tasksToCancel);
+
+        // Complete the current task first
+        completeTask(taskId, request, userId, userName, userRoles);
+
+        // Then cancel the sibling tasks in the same gateway scope
+        if (!tasksToCancel.isEmpty()) {
+            cancelSpecificSiblingTasks(processInstanceId, taskDefKey, tasksToCancel,
+                    "Parallel branch completed (ANY mode)", userId, userName);
+        }
+    }
+
+    /**
+     * Cancel all tasks within a specific gateway scope.
+     * Used when a branch in the gateway completes and remaining branches should be
+     * cancelled.
+     * 
+     * @param processInstanceId The process instance ID
+     * @param gatewayId         The gateway ID defining the scope
+     * @param triggeringTaskId  The task that triggered the cancellation (won't be
+     *                          cancelled)
+     * @param cancelledBy       User who triggered the cancellation
+     * @param cancelledByName   User's name
+     * @return List of cancelled task IDs
+     */
+    public List<String> cancelTasksInGatewayScope(String processInstanceId, String gatewayId,
+            String triggeringTaskId, UUID cancelledBy, String cancelledByName) {
+
+        List<String> tasksToCancel = processAnalyzerService.getSiblingBranchTasksToCancel(
+                processInstanceId, triggeringTaskId, gatewayId);
+
+        log.info("Cancelling {} tasks in gateway {} scope", tasksToCancel.size(), gatewayId);
+
+        for (String taskId : tasksToCancel) {
+            Task siblingTask = taskService.createTaskQuery()
+                    .taskId(taskId)
+                    .singleResult();
+
+            if (siblingTask == null) {
+                log.warn("Task {} no longer exists, skipping cancellation", taskId);
+                continue;
+            }
+
+            // Add cancellation comment
+            taskService.addComment(taskId, processInstanceId,
+                    "Task auto-completed (skipped): Parallel branch " + gatewayId + " completed first");
+
+            // Complete the task with skipped=true so parallel join can proceed
+            Map<String, Object> skipVariables = new java.util.HashMap<>();
+            skipVariables.put("skipped", true);
+            skipVariables.put("skipReason", "Parallel branch completed first");
+            skipVariables.put("skippedBy", cancelledByName);
+            skipVariables.put("gatewayId", gatewayId);
+            taskService.complete(taskId, skipVariables);
+
+            // Record in timeline
+            ActionTimeline timelineEvent = ActionTimeline.builder()
+                    .processInstanceId(processInstanceId)
+                    .actionType(ActionTimeline.ActionType.TASK_CANCELLED)
+                    .taskId(taskId)
+                    .taskName(siblingTask.getName())
+                    .actorId(cancelledBy)
+                    .actorName(cancelledByName)
+                    .metadata(Map.of(
+                            "reason", "Parallel branch completed first",
+                            "gatewayId", gatewayId,
+                            "skipped", true))
+                    .build();
+            actionTimelineRepository.save(timelineEvent);
+
+            // Notify memo-service of task cancellation
+            notifyMemoServiceTaskCompleted(taskId, "CANCELLED", cancelledByName);
+
+            log.info("Cancelled task {} ({}) - gateway {} branch completed first",
+                    taskId, siblingTask.getName(), gatewayId);
+        }
+
+        return tasksToCancel;
     }
 
     /**

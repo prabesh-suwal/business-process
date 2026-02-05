@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Button } from './ui/button';
-import SearchableMultiSelect from './ui/SearchableMultiSelect';
+import AdvancedAssignmentTab from './AdvancedAssignmentTab';
 import {
     Plus, Trash2, GripVertical, Users, Clock, AlertTriangle, ChevronDown, ChevronUp,
-    User, Building2, UserCircle, ArrowDown, Sparkles
+    ArrowDown, Sparkles
 } from 'lucide-react';
 
 /**
@@ -29,13 +29,23 @@ import {
 const StepBuilder = ({
     steps = [],
     onChange,
+    // Organization data from CAS
     roles = [],
+    groups = [],
     departments = [],
+    branches = [],
+    // Geo data
+    regions = [],
+    districts = [],
+    states = [],
+    // Users
     users = [],
+    // SLA/Escalation
     slaDurations = [],
     escalationActions = [],
     readOnly = false,
-    allowedOverrides = null // null = all allowed (general/ad-hoc), object = specific permissions
+    allowedOverrides = null, // null = all allowed (general/ad-hoc), object = specific permissions
+    onPreviewAssignment = null // Preview callback for AdvancedAssignmentTab
 }) => {
     const [expandedStep, setExpandedStep] = useState(null);
     const [draggedIndex, setDraggedIndex] = useState(null);
@@ -56,6 +66,11 @@ const StepBuilder = ({
         const newStep = {
             id: `step_${Date.now()}`,
             name: `Approval Step ${steps.length + 1}`,
+            // New rules-based format
+            rules: [],
+            fallbackRoleId: null,
+            completionMode: 'ANY',
+            // Legacy format (still used by UI for now)
             assignmentType: 'role',
             roles: [],
             departments: [],
@@ -240,77 +255,32 @@ const StepBuilder = ({
                                     {/* Expanded Configuration */}
                                     {isExpanded && (
                                         <div className="border-t border-slate-100 p-4 space-y-4 bg-slate-50/50">
-                                            {/* Assignment Section */}
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                                                    <Users className="w-3.5 h-3.5" />
-                                                    Who should approve?
-                                                </label>
-                                                {canModify('assignment') ? (
-                                                    <>
-                                                        {/* Assignment Type Selector */}
-                                                        <div className="flex gap-2">
-                                                            {[
-                                                                { key: 'role', icon: UserCircle, label: 'By Role' },
-                                                                { key: 'department', icon: Building2, label: 'By Dept' },
-                                                                { key: 'user', icon: User, label: 'Specific User' }
-                                                            ].map(({ key, icon: Icon, label }) => (
-                                                                <button
-                                                                    key={key}
-                                                                    type="button"
-                                                                    onClick={() => updateStep(index, { assignmentType: key })}
-                                                                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${step.assignmentType === key
-                                                                        ? 'bg-blue-500 text-white shadow-sm'
-                                                                        : 'bg-white border border-slate-200 text-slate-600 hover:border-blue-300'
-                                                                        }`}
-                                                                >
-                                                                    <Icon className="w-4 h-4" />
-                                                                    {label}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-
-                                                        {/* Role/Dept/User Selector based on type */}
-                                                        {step.assignmentType === 'role' && (
-                                                            <SearchableMultiSelect
-                                                                options={roles}
-                                                                value={step.roles || []}
-                                                                onChange={(selected) => updateStep(index, { roles: selected })}
-                                                                valueKey="code"
-                                                                labelKey="name"
-                                                                placeholder="Search and select roles..."
-                                                                icon={UserCircle}
-                                                            />
-                                                        )}
-                                                        {step.assignmentType === 'department' && (
-                                                            <SearchableMultiSelect
-                                                                options={departments}
-                                                                value={step.departments || []}
-                                                                onChange={(selected) => updateStep(index, { departments: selected })}
-                                                                valueKey="code"
-                                                                labelKey="name"
-                                                                placeholder="Search and select departments..."
-                                                                icon={Building2}
-                                                            />
-                                                        )}
-                                                        {step.assignmentType === 'user' && (
-                                                            <SearchableMultiSelect
-                                                                options={users}
-                                                                value={step.users || []}
-                                                                onChange={(selected) => updateStep(index, { users: selected })}
-                                                                valueKey="username"
-                                                                labelKey="displayName"
-                                                                placeholder="Search and select users..."
-                                                                icon={User}
-                                                            />
-                                                        )}
-                                                    </>
-                                                ) : (
+                                            {/* Assignment Section - Uses AdvancedAssignmentTab */}
+                                            {canModify('assignment') ? (
+                                                <AdvancedAssignmentTab
+                                                    config={step}
+                                                    onChange={(newConfig) => updateStep(index, newConfig)}
+                                                    roles={roles}
+                                                    groups={groups}
+                                                    departments={departments}
+                                                    branches={branches}
+                                                    regions={regions}
+                                                    districts={districts}
+                                                    states={states}
+                                                    users={users}
+                                                    onPreview={onPreviewAssignment}
+                                                />
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                                                        <Users className="w-3.5 h-3.5" />
+                                                        Who should approve?
+                                                    </label>
                                                     <div className="text-sm text-slate-500 italic">
                                                         Assignment locked by admin
                                                     </div>
-                                                )}
-                                            </div>
+                                                </div>
+                                            )}
 
                                             {/* SLA Section */}
                                             <div className="space-y-2">

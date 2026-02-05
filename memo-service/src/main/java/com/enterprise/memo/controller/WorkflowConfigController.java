@@ -1,14 +1,21 @@
 package com.enterprise.memo.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
+import com.enterprise.memo.dto.AssignmentRulesDTO;
 import com.enterprise.memo.entity.GatewayDecisionRule;
 import com.enterprise.memo.entity.WorkflowStepConfig;
 import com.enterprise.memo.service.WorkflowConfigService;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -100,9 +107,9 @@ public class WorkflowConfigController {
     @PostMapping("/gateways/{ruleId}/activate")
     public ResponseEntity<Void> activateGatewayRule(
             @PathVariable UUID topicId,
-            @PathVariable UUID ruleId,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        UUID activatedBy = userId != null ? UUID.fromString(userId) : null;
+            @PathVariable UUID ruleId) {
+        UserContext user = UserContextHolder.getContext();
+        UUID activatedBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
         configService.activateGatewayRule(ruleId, activatedBy);
         return ResponseEntity.ok().build();
     }
@@ -116,6 +123,58 @@ public class WorkflowConfigController {
             @RequestBody Map<String, Object> memoData) {
         String result = configService.evaluateGateway(topicId, gatewayKey, memoData);
         return ResponseEntity.ok(new EvaluationResult(gatewayKey, result));
+    }
+
+    // ==================== Assignment Preview ====================
+
+    /**
+     * Preview which users would be assigned based on the given assignment rules.
+     * This helps admins validate their assignment configuration before saving.
+     */
+    @PostMapping("/assignments/preview")
+    public ResponseEntity<AssignmentPreviewResult> previewAssignment(
+            @PathVariable UUID topicId,
+            @RequestBody AssignmentRulesDTO rules) {
+        log.info("Previewing assignment for topic {} with {} rules", topicId,
+                rules.getRules() != null ? rules.getRules().size() : 0);
+
+        // TODO: Call CAS/Organization service to resolve users matching criteria
+        // For now, return a placeholder response showing the resolved candidate groups
+        List<String> candidateGroups = new ArrayList<>();
+        List<UserPreviewDTO> matchedUsers = new ArrayList<>();
+
+        if (rules.getRules() != null) {
+            for (AssignmentRulesDTO.AssignmentRule rule : rules.getRules()) {
+                var criteria = rule.getCriteria();
+                if (criteria != null) {
+                    // Add role-based candidate groups
+                    if (criteria.getRoleIds() != null) {
+                        for (UUID roleId : criteria.getRoleIds()) {
+                            candidateGroups.add("ROLE_" + roleId.toString());
+                        }
+                    }
+                    // Add department-based candidate groups
+                    if (criteria.getDepartmentIds() != null) {
+                        for (UUID deptId : criteria.getDepartmentIds()) {
+                            candidateGroups.add("DEPT_" + deptId.toString());
+                        }
+                    }
+                    // Add branch-based candidate groups
+                    if (criteria.getBranchIds() != null) {
+                        for (UUID branchId : criteria.getBranchIds()) {
+                            candidateGroups.add("BRANCH_" + branchId.toString());
+                        }
+                    }
+                }
+            }
+        }
+
+        return ResponseEntity.ok(AssignmentPreviewResult.builder()
+                .topicId(topicId)
+                .candidateGroups(candidateGroups)
+                .matchedUsers(matchedUsers)
+                .message("Preview generated. Connect to CAS for actual user resolution.")
+                .build());
     }
 
     // ==================== DTOs ====================
@@ -202,5 +261,31 @@ public class WorkflowConfigController {
             this.gatewayKey = gatewayKey;
             this.targetFlow = targetFlow;
         }
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AssignmentPreviewResult {
+        private UUID topicId;
+        private List<String> candidateGroups;
+        private List<UserPreviewDTO> matchedUsers;
+        private String message;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class UserPreviewDTO {
+        private UUID userId;
+        private String username;
+        private String fullName;
+        private String email;
+        private String branch;
+        private String department;
+        private List<String> roles;
+        private String matchedRule; // Which rule matched this user
     }
 }

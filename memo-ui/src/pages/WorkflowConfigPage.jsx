@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MemoApi, WorkflowConfigApi, CasAdminApi } from '../lib/api';
+import { MemoApi, WorkflowConfigApi, CasAdminApi, OrganizationApi } from '../lib/api';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -8,7 +8,8 @@ import { Badge } from '../components/ui/badge';
 import { ArrowLeft, Settings, Users, Clock, AlertTriangle, CheckCircle, FileText, Save, Eye, GitBranch } from 'lucide-react';
 import SearchableMultiSelect from '../components/ui/SearchableMultiSelect';
 import ConditionBuilder from '../components/ConditionBuilder';
-
+import AdvancedAssignmentTab from '../components/AdvancedAssignmentTab';
+import TopicDefaultAssignee from '../components/TopicDefaultAssignee';
 
 /**
  * WorkflowConfigPage - Step-centric workflow configuration for business users.
@@ -32,6 +33,13 @@ const WorkflowConfigPage = () => {
     const [assignmentTypes, setAssignmentTypes] = useState([]);
     const [slaDurations, setSlaDurations] = useState([]);
     const [escalationActions, setEscalationActions] = useState([]);
+
+    // Organization/geo data for advanced assignment
+    const [branches, setBranches] = useState([]);
+    const [regions, setRegions] = useState([]);
+    const [districts, setDistricts] = useState([]);
+    const [states, setStates] = useState([]);
+    const [users, setUsers] = useState([]);
 
     useEffect(() => {
         loadData();
@@ -127,6 +135,20 @@ const WorkflowConfigPage = () => {
                 setEscalationActions(getDefaultEscalationActions());
             }
 
+            // Load organization/geo data for advanced assignment
+            try {
+                const [branchesData, regionsData, usersData] = await Promise.all([
+                    OrganizationApi.getAllBranches().catch(() => []),
+                    OrganizationApi.getLocationsByType('PROVINCE').catch(() => []),
+                    CasAdminApi.getUsers().catch(() => [])
+                ]);
+                setBranches(branchesData);
+                setRegions(regionsData);
+                setUsers(usersData);
+            } catch (e) {
+                console.log('Organization data not available:', e);
+            }
+
         } catch (error) {
             console.error('Error loading workflow config:', error);
         } finally {
@@ -205,7 +227,30 @@ const WorkflowConfigPage = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-12 gap-6">
+            {/* Topic-level Default Assignee Configuration */}
+            <TopicDefaultAssignee
+                topicId={topicId}
+                initialConfig={topic?.defaultAssigneeConfig || {}}
+                roles={roles}
+                groups={groups}
+                departments={departments}
+                branches={branches}
+                regions={regions}
+                districts={districts}
+                states={states}
+                users={users}
+                onPreview={async (rules) => {
+                    try {
+                        const result = await WorkflowConfigApi.previewAssignment(topicId, rules);
+                        return result;
+                    } catch (error) {
+                        console.error('Preview failed:', error);
+                        throw error;
+                    }
+                }}
+            />
+
+            <div className="grid grid-cols-12 gap-6 mt-6">
                 {/* Steps List - Left Panel */}
                 <div className="col-span-4">
                     <Card className="shadow-lg">
@@ -250,6 +295,11 @@ const WorkflowConfigPage = () => {
                             roles={roles}
                             groups={groups}
                             departments={departments}
+                            branches={branches}
+                            regions={regions}
+                            districts={districts}
+                            states={states}
+                            users={users}
                             scopes={scopes}
                             assignmentTypes={assignmentTypes}
                             slaDurations={slaDurations}
@@ -333,6 +383,11 @@ const StepConfigPanel = ({
     roles,
     groups,
     departments,
+    branches,
+    regions,
+    districts,
+    states,
+    users,
     scopes,
     assignmentTypes,
     slaDurations,
@@ -427,14 +482,28 @@ const StepConfigPanel = ({
 
                     <div className="p-6">
                         <TabsContent value="assignment" className="mt-0">
-                            <AssignmentTab
+                            <AdvancedAssignmentTab
                                 config={config.assignmentConfig}
                                 onChange={(c) => setConfig({ ...config, assignmentConfig: c })}
-                                assignmentTypes={assignmentTypes}
                                 roles={roles}
                                 groups={groups}
                                 departments={departments}
-                                scopes={scopes}
+                                branches={branches}
+                                regions={regions}
+                                districts={districts}
+                                states={states}
+                                users={users}
+                                topicId={topicId}
+                                onPreview={async (rules) => {
+                                    // Preview API call
+                                    try {
+                                        const result = await WorkflowConfigApi.previewAssignment(topicId, rules);
+                                        return result;
+                                    } catch (error) {
+                                        console.error('Preview failed:', error);
+                                        throw error;
+                                    }
+                                }}
                             />
                         </TabsContent>
 

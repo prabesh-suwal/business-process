@@ -1,5 +1,7 @@
 package com.enterprise.workflow.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.workflow.dto.*;
 import com.enterprise.workflow.service.ProcessRuntimeService;
 import jakarta.validation.Valid;
@@ -29,12 +31,10 @@ public class ProcessInstanceController {
      * Start a new process instance.
      */
     @PostMapping
-    public ResponseEntity<ProcessInstanceDTO> startProcess(
-            @Valid @RequestBody StartProcessRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
-
-        UUID startedBy = userId != null ? UUID.fromString(userId) : null;
+    public ResponseEntity<ProcessInstanceDTO> startProcess(@Valid @RequestBody StartProcessRequest request) {
+        UserContext user = UserContextHolder.getContext();
+        UUID startedBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
+        String userName = user != null ? user.getName() : null;
         ProcessInstanceDTO instance = processRuntimeService.startProcess(request, startedBy, userName);
         return ResponseEntity.status(HttpStatus.CREATED).body(instance);
     }
@@ -63,10 +63,10 @@ public class ProcessInstanceController {
      */
     @GetMapping("/my")
     public ResponseEntity<Page<ProcessInstanceDTO>> getMyProcessInstances(
-            @RequestHeader(value = "X-User-Id") String userId,
             @PageableDefault(size = 20) Pageable pageable) {
-
-        return ResponseEntity.ok(processRuntimeService.getProcessInstancesByUser(UUID.fromString(userId), pageable));
+        UserContext user = UserContextHolder.require();
+        return ResponseEntity
+                .ok(processRuntimeService.getProcessInstancesByUser(UUID.fromString(user.getUserId()), pageable));
     }
 
     /**
@@ -96,11 +96,10 @@ public class ProcessInstanceController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> cancelProcess(
             @PathVariable String id,
-            @RequestParam(required = false) String reason,
-            @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
-
-        UUID cancelledBy = userId != null ? UUID.fromString(userId) : null;
+            @RequestParam(required = false) String reason) {
+        UserContext user = UserContextHolder.getContext();
+        UUID cancelledBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
+        String userName = user != null ? user.getName() : null;
         processRuntimeService.cancelProcess(id, cancelledBy, userName, reason);
         return ResponseEntity.noContent().build();
     }

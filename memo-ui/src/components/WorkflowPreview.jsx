@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import BpmnDesigner from './BpmnDesigner';
-import { Users, Clock, AlertTriangle, Eye, ChevronDown, ChevronRight, Layers, GitBranch, Pencil, Lock, UserCircle, Building2, User } from 'lucide-react';
+import { Users, Clock, AlertTriangle, Eye, ChevronDown, ChevronRight, Layers, GitBranch, Pencil, Lock } from 'lucide-react';
 import { WorkflowConfigApi } from '../lib/api';
-import SearchableMultiSelect from './ui/SearchableMultiSelect';
+import AdvancedAssignmentTab from './AdvancedAssignmentTab';
 
 /**
  * WorkflowPreview - Workflow diagram and configuration preview with override capability
@@ -19,11 +19,22 @@ const WorkflowPreview = ({
     overridePermissions = null, // Admin-defined permissions
     stepOverrides = {}, // Current step overrides from parent
     onStepOverrideChange = null, // Callback when step override changes
+    // Organization data
     roles = [],
+    groups = [],
     departments = [],
+    branches = [],
+    // Geo data
+    regions = [],
+    districts = [],
+    states = [],
+    // Users
     users = [],
+    // SLA/Escalation
     slaDurations = [],
-    escalationActions = []
+    escalationActions = [],
+    // Preview callback
+    onPreviewAssignment = null
 }) => {
     const [activeView, setActiveView] = useState('diagram'); // 'diagram' | 'steps'
     const [steps, setSteps] = useState([]);
@@ -77,6 +88,11 @@ const WorkflowPreview = ({
             const configMap = {};
             configs.forEach(c => {
                 configMap[c.taskKey] = {
+                    // New rules-based format
+                    rules: c.assignmentConfig?.rules || [],
+                    fallbackRoleId: c.assignmentConfig?.fallbackRoleId,
+                    completionMode: c.assignmentConfig?.completionMode || 'ANY',
+                    // Legacy format for display
                     roles: c.assignmentConfig?.roles || [],
                     departments: c.assignmentConfig?.departments || [],
                     users: c.assignmentConfig?.users || [],
@@ -245,42 +261,33 @@ const WorkflowPreview = ({
                                                     </div>
 
                                                     {isEditing && canOverrideAssignment ? (
-                                                        <div className="space-y-3 p-3 bg-white rounded-lg border border-slate-200">
-                                                            {/* Role Multi-select */}
-                                                            <SearchableMultiSelect
-                                                                label="Roles"
-                                                                icon={UserCircle}
-                                                                options={roles}
-                                                                value={config.roles || []}
-                                                                onChange={(selected) => updateStepOverride(step.taskKey, 'roles', selected)}
-                                                                valueKey="code"
-                                                                labelKey="name"
-                                                                placeholder="Search roles..."
-                                                            />
-
-                                                            {/* Department Multi-select */}
-                                                            <SearchableMultiSelect
-                                                                label="Departments"
-                                                                icon={Building2}
-                                                                options={departments}
-                                                                value={config.departments || []}
-                                                                onChange={(selected) => updateStepOverride(step.taskKey, 'departments', selected)}
-                                                                valueKey="code"
-                                                                labelKey="name"
-                                                                placeholder="Search departments..."
-                                                            />
-
-                                                            {/* Users Multi-select */}
-                                                            <SearchableMultiSelect
-                                                                label="Specific Users"
-                                                                icon={User}
-                                                                options={users}
-                                                                value={config.users || []}
-                                                                onChange={(selected) => updateStepOverride(step.taskKey, 'users', selected)}
-                                                                valueKey="username"
-                                                                labelKey="displayName"
-                                                                placeholder={users.length > 0 ? "Search users..." : "No users available"}
-                                                                disabled={users.length === 0}
+                                                        <div className="p-3 bg-white rounded-lg border border-slate-200">
+                                                            <AdvancedAssignmentTab
+                                                                config={{
+                                                                    rules: config.rules || [],
+                                                                    fallbackRoleId: config.fallbackRoleId,
+                                                                    completionMode: config.completionMode || 'ANY'
+                                                                }}
+                                                                onChange={(newConfig) => {
+                                                                    // Update all fields at once
+                                                                    const currentOverride = stepOverrides[step.taskKey] || {};
+                                                                    onStepOverrideChange({
+                                                                        ...stepOverrides,
+                                                                        [step.taskKey]: {
+                                                                            ...currentOverride,
+                                                                            ...newConfig
+                                                                        }
+                                                                    });
+                                                                }}
+                                                                roles={roles}
+                                                                groups={groups}
+                                                                departments={departments}
+                                                                branches={branches}
+                                                                regions={regions}
+                                                                districts={districts}
+                                                                states={states}
+                                                                users={users}
+                                                                onPreview={onPreviewAssignment}
                                                             />
                                                         </div>
                                                     ) : (

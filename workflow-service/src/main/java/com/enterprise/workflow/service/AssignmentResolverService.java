@@ -26,7 +26,6 @@ import java.util.*;
 public class AssignmentResolverService {
 
     private final TaskConfigurationService taskConfigService;
-    // Future: inject CasClient for user resolution by role
 
     /**
      * Resolve assignment for a task based on configuration.
@@ -58,7 +57,15 @@ public class AssignmentResolverService {
             return defaultAssignment();
         }
 
-        // Try NEW multi-select format first
+        // Try NEW multi-rule format first (rules array with OR logic)
+        List<Map<String, Object>> rules = getListOfMapsFromConfig(assignmentConfig, "rules");
+        if (!rules.isEmpty()) {
+            log.info("Using multi-rule assignment format for task {} with {} rules", taskKey, rules.size());
+            return resolveMultiRuleAssignment(rules, assignmentConfig);
+        }
+
+        // Try EXISTING multi-select format (roles[], departments[], users[] with AND
+        // logic)
         List<String> roles = getListFromConfig(assignmentConfig, "roles");
         List<String> departments = getListFromConfig(assignmentConfig, "departments");
         List<String> users = getListFromConfig(assignmentConfig, "users");
@@ -80,7 +87,109 @@ public class AssignmentResolverService {
     }
 
     /**
-     * Resolve using new multi-select format.
+     * Resolve using new multi-rule format.
+     * Multiple rules are combined with OR logic.
+     * Within each rule, criteria are combined with AND logic.
+     */
+    @SuppressWarnings("unchecked")
+    private AssignmentResult resolveMultiRuleAssignment(
+            List<Map<String, Object>> rules,
+            Map<String, Object> assignmentConfig) {
+
+        Set<String> candidateGroups = new HashSet<>();
+        Set<String> candidateUsers = new HashSet<>();
+        List<String> descriptions = new ArrayList<>();
+
+        for (Map<String, Object> rule : rules) {
+            String ruleName = (String) rule.getOrDefault("name", "Rule");
+            Map<String, Object> criteria = (Map<String, Object>) rule.get("criteria");
+
+            if (criteria == null) {
+                continue;
+            }
+
+            // Each rule contributes to candidate groups/users (OR between rules)
+            // Within each rule, all criteria identify the same pool (AND within rule)
+
+            // Process regionIds, districtIds, stateIds - add as geo-based groups
+            List<String> regionIds = getListFromConfig(criteria, "regionIds");
+            if (!regionIds.isEmpty()) {
+                for (String regionId : regionIds) {
+                    candidateGroups.add("REGION_" + regionId);
+                }
+            }
+
+            List<String> districtIds = getListFromConfig(criteria, "districtIds");
+            if (!districtIds.isEmpty()) {
+                for (String districtId : districtIds) {
+                    candidateGroups.add("DISTRICT_" + districtId);
+                }
+            }
+
+            List<String> stateIds = getListFromConfig(criteria, "stateIds");
+            if (!stateIds.isEmpty()) {
+                for (String stateId : stateIds) {
+                    candidateGroups.add("STATE_" + stateId);
+                }
+            }
+
+            // Process branchIds
+            List<String> branchIds = getListFromConfig(criteria, "branchIds");
+            if (!branchIds.isEmpty()) {
+                for (String branchId : branchIds) {
+                    candidateGroups.add("BRANCH_" + branchId);
+                }
+            }
+
+            // Process departmentIds
+            List<String> departmentIds = getListFromConfig(criteria, "departmentIds");
+            if (!departmentIds.isEmpty()) {
+                for (String deptId : departmentIds) {
+                    candidateGroups.add("DEPT_" + deptId);
+                }
+            }
+
+            // Process groupIds (committees)
+            List<String> groupIds = getListFromConfig(criteria, "groupIds");
+            if (!groupIds.isEmpty()) {
+                for (String groupId : groupIds) {
+                    candidateGroups.add("GROUP_" + groupId);
+                }
+            }
+
+            // Process roleIds - use raw UUIDs (no prefix)
+            List<String> roleIds = getListFromConfig(criteria, "roleIds");
+            if (!roleIds.isEmpty()) {
+                for (String roleId : roleIds) {
+                    candidateGroups.add(roleId);
+                }
+            }
+
+            // Process userIds - direct user assignment
+            List<String> userIds = getListFromConfig(criteria, "userIds");
+            if (!userIds.isEmpty()) {
+                candidateUsers.addAll(userIds);
+            }
+
+            descriptions.add(ruleName);
+        }
+
+        // Add fallback role if specified
+        String fallbackRoleId = (String) assignmentConfig.get("fallbackRoleId");
+        if (fallbackRoleId != null && candidateGroups.isEmpty() && candidateUsers.isEmpty()) {
+            candidateGroups.add(fallbackRoleId);
+            descriptions.add("Fallback: " + fallbackRoleId);
+        }
+
+        return AssignmentResult.builder()
+                .candidateGroups(candidateGroups.isEmpty() ? null : new ArrayList<>(candidateGroups))
+                .candidateUsers(candidateUsers.isEmpty() ? null : new ArrayList<>(candidateUsers))
+                .description("Rules: " + String.join(" | ", descriptions))
+                .build();
+    }
+
+    /**
+     * Resolve using existing multi-select format (roles[], departments[], users[]).
      */
     private AssignmentResult resolveMultiSelectAssignment(
             List<String> roles,
@@ -91,11 +200,11 @@ public class AssignmentResolverService {
         List<String> candidateUsers = new ArrayList<>();
         List<String> descriptions = new ArrayList<>();
 
-        // Add roles as candidate groups (directly, no prefix needed)
+        // Add role IDs as candidate groups (config should store role IDs directly)
         if (!roles.isEmpty()) {
             candidateGroups.addAll(roles);
             descriptions.add("Roles: " + String.join(", ", roles));
-            log.info("Added {} roles to candidates", roles.size());
+            log.info("Added {} role IDs to candidates", roles.size());
         }
 
         // Add departments as candidate groups (with DEPT_ prefix)
@@ -132,10 +241,10 @@ public class AssignmentResolverService {
 
         return switch (type) {
             case "ROLE" -> {
-                String role = resolveValue((String) config.get("role"), contextVariables);
+                String roleId = resolveValue((String) config.get("role"), contextVariables);
                 yield AssignmentResult.builder()
-                        .candidateGroups(List.of(role))
-                        .description("Role: " + role)
+                        .candidateGroups(List.of(roleId))
+                        .description("Role ID: " + roleId)
                         .build();
             }
             case "DEPARTMENT" -> {
@@ -193,6 +302,21 @@ public class AssignmentResolverService {
         }
         if (value instanceof List) {
             return (List<String>) value;
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Safely get a list of maps from config (for rules array).
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getListOfMapsFromConfig(Map<String, Object> config, String key) {
+        Object value = config.get(key);
+        if (value == null) {
+            return Collections.emptyList();
+        }
+        if (value instanceof List) {
+            return (List<Map<String, Object>>) value;
         }
         return Collections.emptyList();
     }

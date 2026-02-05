@@ -1,5 +1,7 @@
 package com.enterprise.workflow.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.workflow.dto.*;
 import com.enterprise.workflow.service.ProcessDesignService;
 import jakarta.validation.Valid;
@@ -27,11 +29,9 @@ public class ProcessTemplateController {
      * Create a new process template (DRAFT status).
      */
     @PostMapping
-    public ResponseEntity<ProcessTemplateDTO> createTemplate(
-            @Valid @RequestBody CreateProcessTemplateRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
-
-        UUID createdBy = userId != null ? UUID.fromString(userId) : null;
+    public ResponseEntity<ProcessTemplateDTO> createTemplate(@Valid @RequestBody CreateProcessTemplateRequest request) {
+        UserContext user = UserContextHolder.getContext();
+        UUID createdBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
         ProcessTemplateDTO template = processDesignService.createTemplate(request, createdBy);
         return ResponseEntity.status(HttpStatus.CREATED).body(template);
     }
@@ -83,11 +83,9 @@ public class ProcessTemplateController {
      * Deploy a process template to Flowable (makes it ACTIVE).
      */
     @PostMapping("/{id}/deploy")
-    public ResponseEntity<ProcessTemplateDTO> deployTemplate(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
-
-        UUID deployedBy = userId != null ? UUID.fromString(userId) : null;
+    public ResponseEntity<ProcessTemplateDTO> deployTemplate(@PathVariable UUID id) {
+        UserContext user = UserContextHolder.getContext();
+        UUID deployedBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
         return ResponseEntity.ok(processDesignService.deployTemplate(id, deployedBy));
     }
 
@@ -98,8 +96,7 @@ public class ProcessTemplateController {
      */
     @PostMapping("/deploy-bpmn")
     public ResponseEntity<java.util.Map<String, Object>> deployBpmn(
-            @RequestBody java.util.Map<String, String> request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @RequestBody java.util.Map<String, String> request) {
 
         String processKey = request.get("processKey");
         String processName = request.get("processName");
@@ -144,11 +141,9 @@ public class ProcessTemplateController {
      * This creates a new DRAFT template based on the existing template's BPMN.
      */
     @PostMapping("/{id}/new-version")
-    public ResponseEntity<ProcessTemplateDTO> createNewVersion(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
-
-        UUID createdBy = userId != null ? UUID.fromString(userId) : null;
+    public ResponseEntity<ProcessTemplateDTO> createNewVersion(@PathVariable UUID id) {
+        UserContext user = UserContextHolder.getContext();
+        UUID createdBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
         return ResponseEntity.ok(processDesignService.createNewVersion(id, createdBy));
     }
 

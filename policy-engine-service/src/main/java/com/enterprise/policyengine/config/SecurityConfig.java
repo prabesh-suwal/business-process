@@ -1,5 +1,6 @@
 package com.enterprise.policyengine.config;
 
+import com.cas.common.security.UserContextFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +27,11 @@ public class SecurityConfig {
     private String allowedOrigins;
 
     @Bean
+    public UserContextFilter userContextFilter() {
+        return new UserContextFilter();
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 // CORS is handled by the Gateway - disable here to avoid duplicate headers
@@ -42,7 +48,8 @@ public class SecurityConfig {
                         // Policy management - requires authentication
                         .requestMatchers("/policies/**").authenticated()
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(userContextFilter(), JwtAuthenticationFilter.class);
 
         return http.build();
     }

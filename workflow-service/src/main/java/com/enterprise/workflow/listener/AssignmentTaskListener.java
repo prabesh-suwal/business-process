@@ -133,9 +133,28 @@ public class AssignmentTaskListener implements TaskListener {
             event.setProcessInstanceId(delegateTask.getProcessInstanceId());
 
             // Pass resolved assignment to memo-service (for MemoTask record)
-            if (assignment != null) {
+            // If assignment was resolved from config, use it
+            // Otherwise, fall back to BPMN-defined candidateGroups
+            if (assignment != null && assignment.getCandidateGroups() != null
+                    && !assignment.getCandidateGroups().isEmpty()) {
                 event.setCandidateGroups(assignment.getCandidateGroups());
                 event.setCandidateUsers(assignment.getCandidateUsers());
+            } else {
+                // Fall back to BPMN-defined candidates (for dynamic workflows)
+                Set<org.flowable.identitylink.api.IdentityLink> candidates = delegateTask.getCandidates();
+                if (candidates != null && !candidates.isEmpty()) {
+                    List<String> groups = candidates.stream()
+                            .filter(c -> c.getGroupId() != null)
+                            .map(org.flowable.identitylink.api.IdentityLink::getGroupId)
+                            .toList();
+                    List<String> users = candidates.stream()
+                            .filter(c -> c.getUserId() != null)
+                            .map(org.flowable.identitylink.api.IdentityLink::getUserId)
+                            .toList();
+                    event.setCandidateGroups(groups);
+                    event.setCandidateUsers(users);
+                    log.info("Using BPMN-defined candidates for task {}: groups={}, users={}", taskKey, groups, users);
+                }
             }
 
             // Fire-and-forget notification (don't block on response)

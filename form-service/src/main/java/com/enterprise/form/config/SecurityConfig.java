@@ -1,21 +1,27 @@
 package com.enterprise.form.config;
 
+import com.cas.common.security.UserContextFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Security configuration for form-service.
- * For now, we permit all requests since authentication is handled at the
- * gateway.
- * TODO: Add JWT validation filter for production environments.
+ * Gateway handles authentication, this service uses UserContextFilter
+ * to extract user info from forwarded headers.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    @Bean
+    public UserContextFilter userContextFilter() {
+        return new UserContextFilter();
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -29,7 +35,8 @@ public class SecurityConfig {
                         // All API endpoints - gateway handles auth
                         .requestMatchers("/api/**").permitAll()
                         // Everything else
-                        .anyRequest().permitAll());
+                        .anyRequest().permitAll())
+                .addFilterAfter(userContextFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

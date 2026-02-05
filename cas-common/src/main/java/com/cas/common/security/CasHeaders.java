@@ -58,4 +58,56 @@ public final class CasHeaders {
      * API client name (for service tokens).
      */
     public static final String CLIENT_NAME = "X-Client-Name";
+
+    // ===== Role Identity =====
+
+    /**
+     * Comma-separated list of role IDs (UUIDs) for the product.
+     */
+    public static final String ROLE_IDS = "X-Role-Ids";
+
+    /**
+     * Backward compatible roles header for workflow-service.
+     */
+    public static final String USER_ROLES = "X-User-Roles";
+
+    // ===== Product/Org Headers =====
+
+    /**
+     * Product ID (UUID).
+     */
+    public static final String PRODUCT_ID = "X-Product-Id";
+
+    /**
+     * Branch ID for multi-branch organizations.
+     */
+    public static final String BRANCH_ID = "X-Branch-Id";
+
+    /**
+     * Department ID for organizational hierarchy.
+     */
+    public static final String DEPARTMENT_ID = "X-Department-Id";
+
+    // ===== Service Identity (for service-to-service calls) =====
+
+    /**
+     * Name of the calling service.
+     */
+    public static final String SERVICE_NAME = "X-CAS-Service-Name";
+
+    /**
+     * Service authentication token/credential.
+     */
+    public static final String SERVICE_TOKEN = "X-CAS-Service-Token";
+
+    /**
+     * Actor type: USER, SERVICE, or SYSTEM.
+     */
+    public static final String ACTOR_TYPE = "X-CAS-Actor-Type";
+
+    // ===== Actor Type Values =====
+
+    public static final String ACTOR_TYPE_USER = "USER";
+    public static final String ACTOR_TYPE_SERVICE = "SERVICE";
+    public static final String ACTOR_TYPE_SYSTEM = "SYSTEM";
 }

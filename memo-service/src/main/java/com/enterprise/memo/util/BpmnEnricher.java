@@ -64,6 +64,9 @@ public class BpmnEnricher {
                 injectConditions(doc, stepConfigs);
             }
 
+            // 3. Fix Signal References (for signal throw/catch events)
+            fixSignalReferences(doc);
+
             // Convert back to XML string
             return documentToString(doc);
 
@@ -454,6 +457,9 @@ public class BpmnEnricher {
                 injectGatewayCompletionConditions(doc, gatewayConfigs);
             }
 
+            // 4. Fix Signal References (for signal throw/catch events)
+            fixSignalReferences(doc);
+
             return documentToString(doc);
 
         } catch (Exception e) {
@@ -530,5 +536,164 @@ public class BpmnEnricher {
         Element extensionElements = doc.createElementNS(BPMN_NS, "bpmn:extensionElements");
         parent.insertBefore(extensionElements, parent.getFirstChild());
         return extensionElements;
+    }
+
+    // ==================== SIGNAL EVENT SUPPORT ====================
+
+    /**
+     * Fixes signal references in BPMN XML.
+     * 
+     * The bpmn-js modeler creates signal events (throw/catch) without proper
+     * signal definitions. This method:
+     * 1. Detects all signal events (intermediateThrowEvent, intermediateCatchEvent,
+     * boundaryEvent with signalEventDefinition)
+     * 2. Extracts signal names from element names or generates unique ones
+     * 3. Creates signal definitions at the definitions level
+     * 4. Links signal events to their definitions via signalRef
+     * 
+     * @param doc The BPMN DOM document to fix
+     */
+    private static void fixSignalReferences(Document doc) {
+        // Find all signal event definitions
+        NodeList signalEventDefs = doc.getElementsByTagNameNS(BPMN_NS, "signalEventDefinition");
+
+        if (signalEventDefs.getLength() == 0) {
+            log.debug("No signal events found in BPMN");
+            return;
+        }
+
+        log.info("Found {} signal event definitions to fix", signalEventDefs.getLength());
+
+        // Get the definitions element (root)
+        Element definitions = doc.getDocumentElement();
+
+        // Track signals we've already created
+        java.util.Map<String, String> signalNameToId = new java.util.HashMap<>();
+        int signalCounter = 1;
+
+        for (int i = 0; i < signalEventDefs.getLength(); i++) {
+            Element signalEventDef = (Element) signalEventDefs.item(i);
+
+            // Check if it already has a signalRef
+            String existingRef = signalEventDef.getAttribute("signalRef");
+            if (existingRef != null && !existingRef.isEmpty()) {
+                log.debug("Signal event already has signalRef: {}", existingRef);
+                continue;
+            }
+
+            // Get the parent element (event) to extract signal name
+            Element parentEvent = (Element) signalEventDef.getParentNode();
+            String eventId = parentEvent.getAttribute("id");
+            String eventName = parentEvent.getAttribute("name");
+
+            // Determine signal name - use event name or generate one
+            String signalName;
+            if (eventName != null && !eventName.isEmpty()) {
+                // Use the event name as signal name (common pattern)
+                signalName = eventName.replaceAll("\\s+", "_").toLowerCase();
+            } else {
+                // Generate a name based on the event type
+                String eventType = parentEvent.getLocalName();
+                if (eventType.contains("Throw")) {
+                    signalName = "signal_throw_" + signalCounter;
+                } else if (eventType.contains("Catch") || eventType.equals("boundaryEvent")) {
+                    signalName = "signal_catch_" + signalCounter;
+                } else {
+                    signalName = "signal_" + signalCounter;
+                }
+            }
+
+            // Normalize the signal name for matching
+            String normalizedName = normalizeSignalName(signalName);
+
+            // Check if we already have a signal with this name
+            String signalId = signalNameToId.get(normalizedName);
+
+            if (signalId == null) {
+                // Create new signal definition
+                signalId = "Signal_" + signalCounter++;
+
+                Element signalElement = doc.createElementNS(BPMN_NS, "bpmn:signal");
+                signalElement.setAttribute("id", signalId);
+                signalElement.setAttribute("name", normalizedName);
+
+                // Insert signal at the beginning of definitions (after any imports)
+                Node firstChild = definitions.getFirstChild();
+                definitions.insertBefore(signalElement, firstChild);
+
+                signalNameToId.put(normalizedName, signalId);
+                log.info("Created signal definition: id={}, name={}", signalId, normalizedName);
+            }
+
+            // Link the signal event to the signal definition
+            signalEventDef.setAttribute("signalRef", signalId);
+            log.info("Linked event {} to signal {}", eventId, signalId);
+        }
+
+        // Also look for signals that might be referenced by name in extensions
+        // (for signals defined via the properties panel)
+        fixSignalsFromExtensions(doc, definitions, signalNameToId);
+    }
+
+    /**
+     * Look for signal references in Flowable extension elements and fix them.
+     */
+    private static void fixSignalsFromExtensions(Document doc, Element definitions,
+            java.util.Map<String, String> signalNameToId) {
+        // Some BPMN modelers put signal info in extension elements
+        // Check for any signalRef attributes that reference non-existent signals
+
+        NodeList allElements = doc.getElementsByTagName("*");
+        for (int i = 0; i < allElements.getLength(); i++) {
+            Element el = (Element) allElements.item(i);
+            String signalRef = el.getAttribute("signalRef");
+
+            if (signalRef != null && !signalRef.isEmpty()) {
+                // Check if this signal exists
+                boolean signalExists = false;
+                NodeList signals = doc.getElementsByTagNameNS(BPMN_NS, "signal");
+                for (int j = 0; j < signals.getLength(); j++) {
+                    Element sig = (Element) signals.item(j);
+                    if (signalRef.equals(sig.getAttribute("id"))) {
+                        signalExists = true;
+                        break;
+                    }
+                }
+
+                if (!signalExists) {
+                    // Try to find or create the signal
+                    String normalizedName = normalizeSignalName(signalRef);
+                    String signalId = signalNameToId.get(normalizedName);
+
+                    if (signalId == null) {
+                        // Create the signal
+                        signalId = signalRef.startsWith("Signal_") ? signalRef : "Signal_" + signalRef;
+
+                        Element signalElement = doc.createElementNS(BPMN_NS, "bpmn:signal");
+                        signalElement.setAttribute("id", signalId);
+                        signalElement.setAttribute("name", normalizedName);
+
+                        definitions.insertBefore(signalElement, definitions.getFirstChild());
+                        signalNameToId.put(normalizedName, signalId);
+                        log.info("Created missing signal: id={}, name={}", signalId, normalizedName);
+                    }
+
+                    // Update the reference
+                    el.setAttribute("signalRef", signalId);
+                }
+            }
+        }
+    }
+
+    /**
+     * Normalizes a signal name for consistent matching.
+     * Converts to snake_case and removes special characters.
+     */
+    private static String normalizeSignalName(String name) {
+        if (name == null)
+            return "signal";
+        return name.replaceAll("\\s+", "_")
+                .replaceAll("[^a-zA-Z0-9_]", "")
+                .toLowerCase();
     }
 }

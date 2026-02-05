@@ -1,5 +1,7 @@
 package com.enterprise.form.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.form.dto.*;
 import com.enterprise.form.entity.FormDefinition;
 import com.enterprise.form.repository.FormDefinitionRepository;
@@ -31,12 +33,10 @@ public class FormSubmissionController {
      * Submit form data.
      */
     @PostMapping
-    public ResponseEntity<FormSubmissionDTO> submitForm(
-            @Valid @RequestBody SubmitFormRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
-
-        UUID submittedBy = userId != null ? UUID.fromString(userId) : null;
+    public ResponseEntity<FormSubmissionDTO> submitForm(@Valid @RequestBody SubmitFormRequest request) {
+        UserContext user = UserContextHolder.getContext();
+        UUID submittedBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
+        String userName = user != null ? user.getName() : null;
         FormSubmissionDTO submission = submissionService.submitForm(request, submittedBy, userName);
         return ResponseEntity.status(HttpStatus.CREATED).body(submission);
     }

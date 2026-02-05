@@ -58,12 +58,17 @@ export default function MemoEditor() {
 
             if (data.status !== 'DRAFT') {
                 try {
+                    console.log(`[MemoEditor] Fetching tasks for memo ${id}, status: ${data.status}`);
                     const tasks = await TaskApi.getTasksForMemo(id);
+                    console.log(`[MemoEditor] getTasksForMemo returned:`, tasks);
                     if (tasks && tasks.length > 0) {
+                        console.log(`[MemoEditor] Setting activeTask:`, tasks[0]);
                         setActiveTask(tasks[0]);
+                    } else {
+                        console.log(`[MemoEditor] No actionable tasks found for this user`);
                     }
                 } catch (e) {
-                    console.log("No active tasks or failed to check", e);
+                    console.error("[MemoEditor] getTasksForMemo failed:", e);
                 }
             }
 

@@ -116,6 +116,26 @@ public class JwtAuthenticationGatewayFilter implements GlobalFilter, Ordered {
                             String productsJson = new com.fasterxml.jackson.databind.ObjectMapper()
                                     .writeValueAsString(products);
                             requestBuilder.header("X-Product-Claims", productsJson);
+
+                            // Extract roles and roleIds for cas-admin product
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> casAdminProduct = (Map<String, Object>) products.get("cas-admin");
+                            if (casAdminProduct != null) {
+                                // Extract role names
+                                @SuppressWarnings("unchecked")
+                                List<String> roles = (List<String>) casAdminProduct.get("roles");
+                                if (roles != null && !roles.isEmpty()) {
+                                    requestBuilder.header("X-Roles", String.join(",", roles));
+                                    requestBuilder.header("X-User-Roles", String.join(",", roles));
+                                }
+
+                                // Extract role IDs (UUIDs)
+                                @SuppressWarnings("unchecked")
+                                List<String> roleIds = (List<String>) casAdminProduct.get("roleIds");
+                                if (roleIds != null && !roleIds.isEmpty()) {
+                                    requestBuilder.header("X-Role-Ids", String.join(",", roleIds));
+                                }
+                            }
                         } catch (Exception e) {
                             log.warn("Failed to serialize product claims: {}", e.getMessage());
                         }

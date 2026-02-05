@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MemoApi, CasAdminApi } from '../lib/api';
+import { MemoApi, CasAdminApi, OrganizationApi } from '../lib/api';
 import { PageContainer } from '../components/PageContainer';
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -40,10 +40,16 @@ export default function CreateMemo() {
     const [useCustomWorkflow, setUseCustomWorkflow] = useState(false);
     const [stepOverrides, setStepOverrides] = useState({}); // Inline step overrides for WorkflowPreview
 
-    // Dropdown data for StepBuilder
+    // Dropdown data for StepBuilder/AdvancedAssignmentTab
     const [roles, setRoles] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [branches, setBranches] = useState([]);
     const [users, setUsers] = useState([]);
+    // Geo data
+    const [regions, setRegions] = useState([]);
+    const [districts, setDistricts] = useState([]);
+    const [states, setStates] = useState([]);
     const [slaDurations, setSlaDurations] = useState([
         { code: 'PT1H', label: '1 Hour' },
         { code: 'PT4H', label: '4 Hours' },
@@ -59,24 +65,37 @@ export default function CreateMemo() {
         { code: 'SEND_REMINDER', label: 'Send Reminder' }
     ]);
 
-    // Fetch Categories on load
+    // Fetch Categories and dropdown data on load
     useEffect(() => {
         setLoading(true);
         Promise.all([
             MemoApi.getCategories(),
             CasAdminApi.getRoles().catch(() => []),
+            CasAdminApi.getGroups().catch(() => []),
             CasAdminApi.getDepartments().catch(() => []),
-            CasAdminApi.getUsers().catch(() => [])
-        ]).then(([cats, rolesData, deptsData, usersData]) => {
+            CasAdminApi.getUsers().catch(() => []),
+            OrganizationApi.getAllBranches().catch(() => []),
+            OrganizationApi.getLocationsByType('PROVINCE').catch(() => []),
+            OrganizationApi.getLocationsByType('DISTRICT').catch(() => [])
+        ]).then(([cats, rolesData, groupsData, deptsData, usersData, branchesData, provincesData, districtsData]) => {
             setCategories(cats);
             setRoles(rolesData);
+            setGroups(groupsData);
             setDepartments(deptsData);
             setUsers(usersData);
+            setBranches(branchesData);
+            setRegions(provincesData); // Provinces as regions
+            setDistricts(districtsData);
         }).catch(err => {
             console.error(err);
             toast.error("Failed to load initial data");
         }).finally(() => setLoading(false));
     }, []);
+
+    // Preview assignment handler - resolves which users match the assignment rules
+    const handlePreviewAssignment = async (config) => {
+        return CasAdminApi.previewAssignment(config);
+    };
 
     // Fetch Topics when Category changes
     useEffect(() => {
@@ -166,6 +185,11 @@ export default function CreateMemo() {
                     steps: workflowSteps.map(step => ({
                         id: step.id,
                         name: step.name,
+                        // New rules-based format
+                        rules: step.rules || [],
+                        fallbackRoleId: step.fallbackRoleId || null,
+                        completionMode: step.completionMode || 'ANY',
+                        // Legacy format for backward compatibility
                         assignmentType: step.assignmentType,
                         roles: step.roles || [],
                         departments: step.departments || [],
@@ -176,9 +200,20 @@ export default function CreateMemo() {
                 };
             } else if (Object.keys(stepOverrides).length > 0) {
                 // Include inline step overrides when using default workflow
+                // Transform step overrides to include rules-based format
+                const transformedOverrides = {};
+                Object.entries(stepOverrides).forEach(([taskKey, override]) => {
+                    transformedOverrides[taskKey] = {
+                        ...override,
+                        // Include rules if they exist
+                        rules: override.rules || [],
+                        fallbackRoleId: override.fallbackRoleId || null,
+                        completionMode: override.completionMode || 'ANY'
+                    };
+                });
                 updatePayload.workflowOverrides = {
                     customWorkflow: false,
-                    stepOverrides: stepOverrides
+                    stepOverrides: transformedOverrides
                 };
             }
 
@@ -418,11 +453,17 @@ export default function CreateMemo() {
                                                 steps={workflowSteps}
                                                 onChange={setWorkflowSteps}
                                                 roles={roles}
+                                                groups={groups}
                                                 departments={departments}
+                                                branches={branches}
                                                 users={users}
+                                                regions={regions}
+                                                districts={districts}
+                                                states={states}
                                                 slaDurations={slaDurations}
                                                 escalationActions={escalationActions}
                                                 allowedOverrides={selectedTopicDetails.workflowXml ? selectedTopicDetails.overridePermissions : null}
+                                                onPreviewAssignment={handlePreviewAssignment}
                                             />
                                         </div>
                                     )}
@@ -437,10 +478,16 @@ export default function CreateMemo() {
                                             stepOverrides={stepOverrides}
                                             onStepOverrideChange={setStepOverrides}
                                             roles={roles}
+                                            groups={groups}
                                             departments={departments}
+                                            branches={branches}
                                             users={users}
+                                            regions={regions}
+                                            districts={districts}
+                                            states={states}
                                             slaDurations={slaDurations}
                                             escalationActions={escalationActions}
+                                            onPreviewAssignment={handlePreviewAssignment}
                                         />
                                     )}
                                 </div>

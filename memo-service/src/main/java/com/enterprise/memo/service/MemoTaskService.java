@@ -163,7 +163,7 @@ public class MemoTaskService {
 
         workflowClient.completeTask(task.getWorkflowTaskId(), userId.toString(),
                 userName != null ? userName : "Unknown",
-                taskVariables, false); // cancelOthers handled by TaskController
+                taskVariables, false, null); // cancelOthers and gatewayId handled by TaskController
 
         // Update memo status based on action
         updateMemoStatus(task.getMemo(), action);

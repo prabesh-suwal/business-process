@@ -1,5 +1,7 @@
 package com.enterprise.form.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.form.dto.*;
 import com.enterprise.form.service.FormBuilderService;
 import jakarta.validation.Valid;
@@ -25,11 +27,9 @@ public class FormDefinitionController {
      * Create a new form definition.
      */
     @PostMapping
-    public ResponseEntity<FormDefinitionDTO> createForm(
-            @Valid @RequestBody CreateFormRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
-
-        UUID createdBy = userId != null ? UUID.fromString(userId) : null;
+    public ResponseEntity<FormDefinitionDTO> createForm(@Valid @RequestBody CreateFormRequest request) {
+        UserContext user = UserContextHolder.getContext();
+        UUID createdBy = user != null && user.getUserId() != null ? UUID.fromString(user.getUserId()) : null;
         FormDefinitionDTO form = formBuilderService.createForm(request, createdBy);
         return ResponseEntity.status(HttpStatus.CREATED).body(form);
     }

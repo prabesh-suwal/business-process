@@ -37,15 +37,24 @@ public class ProcessRuntimeService {
          * Start a new process instance from a process template.
          * The processTemplateId can be either:
          * - A UUID (our internal ProcessTemplate ID)
-         * - A Flowable process definition ID (e.g., "process_key:1:12345")
+         * - A Flowable process definition ID (e.g., "process_key:1:12345" or raw ID
+         * with
+         * useProcessDefinitionId=true)
          */
         public ProcessInstanceDTO startProcess(StartProcessRequest request, UUID startedBy, String startedByName) {
                 String processTemplateId = request.getProcessTemplateId();
                 ProcessTemplate template = null;
                 String flowableProcessDefKey = null;
+                boolean startById = request.isUseProcessDefinitionId();
 
+                // If explicitly flagged to use by ID, use the processTemplateId as the Flowable
+                // definition ID
+                if (startById) {
+                        flowableProcessDefKey = processTemplateId;
+                        log.info("Starting process by definition ID (explicit flag): {}", flowableProcessDefKey);
+                }
                 // Check if it's a Flowable process definition ID (contains colon)
-                if (processTemplateId.contains(":")) {
+                else if (processTemplateId.contains(":")) {
                         // It's a direct Flowable process definition ID
                         flowableProcessDefKey = processTemplateId;
                         log.info("Starting process directly by definition ID: {}", flowableProcessDefKey);
@@ -104,7 +113,7 @@ public class ProcessRuntimeService {
 
                 // Start Flowable process instance
                 ProcessInstance processInstance;
-                if (flowableProcessDefKey.contains(":")) {
+                if (startById || flowableProcessDefKey.contains(":")) {
                         // Start by process definition ID
                         processInstance = runtimeService.startProcessInstanceById(
                                         flowableProcessDefKey,

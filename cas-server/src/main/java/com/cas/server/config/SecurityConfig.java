@@ -1,5 +1,6 @@
 package com.cas.server.config;
 
+import com.cas.common.security.UserContextFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,6 +26,11 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
+    public UserContextFilter userContextFilter() {
+        return new UserContextFilter();
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 // CORS is handled by the Gateway - disable here to avoid duplicate headers
@@ -37,6 +43,8 @@ public class SecurityConfig {
                         .requestMatchers("/oauth/**").permitAll()
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // Workflow config endpoints - public dropdown data
+                        .requestMatchers("/admin/workflow-config/**").permitAll()
 
                         // Admin endpoints require authentication (protected by JWT filter)
                         .requestMatchers("/admin/**").authenticated()
@@ -44,7 +52,8 @@ public class SecurityConfig {
                         // Everything else
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter,
-                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
+                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(userContextFilter(), JwtAuthenticationFilter.class);
 
         return http.build();
     }

@@ -137,6 +137,9 @@ export const MemoApi = {
     // Copy workflow to new version (unlocks deployed workflow for editing)
     copyTopicWorkflow: (topicId) => api.post(`/memo-config/topics/${topicId}/copy-workflow`).then(res => res.data),
 
+    // Update topic's default assignee configuration
+    updateTopicDefaultAssignee: (topicId, config) => api.patch(`/memo-config/topics/${topicId}/default-assignee`, config).then(res => res.data),
+
     // ==================== GATEWAY CONFIGURATION ====================
 
     // Get all gateway configs for a topic
@@ -283,6 +286,31 @@ export const HistoryApi = {
 };
 
 /**
+ * Organization API - Geo locations, branches, departments for assignment dropdowns.
+ * Routes through gateway to organization-service.
+ */
+export const OrganizationApi = {
+    // Geo hierarchy types (Province, District, Municipality, etc.)
+    getGeoTypes: (country = 'NP') => api.get(`/org/api/geo/types?country=${country}`).then(res => res.data),
+
+    // Get locations by type (all provinces, all districts, etc.)
+    getLocationsByType: (type, country = 'NP') => api.get(`/org/api/geo/locations?type=${type}&country=${country}`).then(res => res.data),
+
+    // Get child locations of a parent (districts in a province, etc.)
+    getChildLocations: (parentId) => api.get(`/org/api/geo/locations/${parentId}/children`).then(res => res.data),
+
+    // Branches
+    getAllBranches: () => api.get('/org/api/branches').then(res => res.data),
+    getBranch: (id) => api.get(`/org/api/branches/${id}`).then(res => res.data),
+
+    // Departments
+    getAllDepartments: () => api.get('/org/api/departments').then(res => res.data),
+
+    // Groups/Committees
+    getAllGroups: () => api.get('/org/api/groups').then(res => res.data),
+};
+
+/**
  * CAS Admin API - Dynamic dropdown data for workflow configuration.
  * All roles/groups/departments fetched from CAS server.
  */
@@ -344,6 +372,9 @@ export const WorkflowConfigApi = {
 
     // Test gateway evaluation
     evaluateGateway: (topicId, gatewayKey, memoData) => api.post(`/memo-admin/topics/${topicId}/workflow-config/gateways/${gatewayKey}/evaluate`, memoData).then(res => res.data),
+
+    // Preview assignment - shows which users would match the given assignment rules
+    previewAssignment: (topicId, rules) => api.post(`/memo-admin/topics/${topicId}/workflow-config/assignments/preview`, rules).then(res => res.data),
 };
 
 export default api;

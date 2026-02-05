@@ -75,12 +75,12 @@ const AssignmentConfigPanel = ({
         }
     };
 
-    // Toggle role selection
-    const toggleRole = (roleCode) => {
-        const isSelected = selectedRoles.includes(roleCode);
+    // Toggle role selection - uses role ID (UUID) not code
+    const toggleRole = (roleId) => {
+        const isSelected = selectedRoles.includes(roleId);
         const newRoles = isSelected
-            ? selectedRoles.filter(r => r !== roleCode)
-            : [...selectedRoles, roleCode];
+            ? selectedRoles.filter(r => r !== roleId)
+            : [...selectedRoles, roleId];
 
         onChange({ ...config, roles: newRoles });
     };
@@ -119,7 +119,7 @@ const AssignmentConfigPanel = ({
     // Get display name
     const getDisplayName = (type, value) => {
         if (type === 'role') {
-            const role = roles.find(r => r.code === value);
+            const role = roles.find(r => r.id === value);
             return role ? role.label || role.name : value;
         }
         if (type === 'department') {
@@ -256,13 +256,13 @@ const AssignmentConfigPanel = ({
                         <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
                             {roles.map(role => (
                                 <button
-                                    key={role.code}
+                                    key={role.id}
                                     type="button"
-                                    onClick={() => toggleRole(role.code)}
+                                    onClick={() => toggleRole(role.id)}
                                     className="w-full flex items-center justify-between p-3 hover:bg-blue-50 transition-colors text-left"
                                 >
                                     <span className="text-sm">{role.label || role.name}</span>
-                                    {selectedRoles.includes(role.code) && (
+                                    {selectedRoles.includes(role.id) && (
                                         <Check className="w-4 h-4 text-blue-600" />
                                     )}
                                 </button>

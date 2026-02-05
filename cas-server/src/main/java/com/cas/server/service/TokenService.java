@@ -48,6 +48,9 @@ public class TokenService {
         List<String> roleNames = roles.stream()
                 .map(Role::getCode)
                 .collect(Collectors.toList());
+        List<String> roleIds = roles.stream()
+                .map(r -> r.getId().toString())
+                .collect(Collectors.toList());
         Set<String> scopes = roles.stream()
                 .flatMap(r -> r.getAllPermissionCodes().stream())
                 .collect(Collectors.toSet());
@@ -58,6 +61,7 @@ public class TokenService {
         Map<String, Object> productClaims = new HashMap<>();
         Map<String, Object> productData = new HashMap<>();
         productData.put("roles", roleNames);
+        productData.put("roleIds", roleIds); // Include role UUIDs for assignment matching
         productData.put("scopes", new ArrayList<>(scopes));
         if (!constraints.isEmpty()) {
             productData.put("constraints", constraints);
@@ -324,10 +328,13 @@ public class TokenService {
                 @SuppressWarnings("unchecked")
                 List<String> roles = (List<String>) productData.get("roles");
                 @SuppressWarnings("unchecked")
+                List<String> roleIds = (List<String>) productData.get("roleIds");
+                @SuppressWarnings("unchecked")
                 List<String> scopes = (List<String>) productData.get("scopes");
 
                 productClaimsMap.put(entry.getKey(), TokenClaims.ProductClaims.builder()
                         .roles(roles)
+                        .roleIds(roleIds)
                         .scopes(scopes != null ? new HashSet<>(scopes) : new HashSet<>())
                         .build());
             }

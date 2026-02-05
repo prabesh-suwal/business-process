@@ -13,16 +13,20 @@ import { Search, X, Check, ChevronDown } from 'lucide-react';
  */
 const SearchableMultiSelect = ({
     options = [],
-    value = [],
+    value: valueProp,
+    selected,  // Alias for value
     onChange,
     placeholder = "Search...",
     label,
-    valueKey = "code",
-    labelKey = "name",
+    valueKey = "value",  // Changed default from "code" to "value"
+    labelKey = "label",  // Changed default from "name" to "label"
     icon: Icon,
     disabled = false,
     maxHeight = "200px"
 }) => {
+    // Support both 'value' and 'selected' props
+    const value = valueProp ?? selected ?? [];
+
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -48,11 +52,15 @@ const SearchableMultiSelect = ({
         return String(opt);
     };
 
-    // Helper to safely get value
+    // Helper to safely get value - ALWAYS returns a string for use as React key
     const getValue = (opt) => {
         if (!opt) return '';
         if (typeof opt === 'string') return opt;
-        return opt[valueKey] || opt.code || opt.name || String(opt);
+        const rawValue = opt[valueKey] || opt.value || opt.id || opt.code || opt.name;
+        // Ensure we return a string for React keys
+        if (rawValue === null || rawValue === undefined) return '';
+        if (typeof rawValue === 'object') return JSON.stringify(rawValue);
+        return String(rawValue);
     };
 
     // Filter options based on search

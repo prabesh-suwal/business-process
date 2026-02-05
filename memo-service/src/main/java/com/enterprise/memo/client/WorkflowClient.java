@@ -67,11 +67,14 @@ public class WorkflowClient {
          * 
          * @param cancelOthers If true, other parallel tasks will be cancelled (for
          *                     "first approval wins" mode)
+         * @param gatewayId    Optional. If provided with cancelOthers=true, only
+         *                     cancels tasks
+         *                     within this gateway's scope (for nested gateway support)
          */
         public void completeTask(String taskId, String userId, String userName, Map<String, Object> variables,
-                        boolean cancelOthers) {
-                log.info("Completing task {} with variables for user {}, cancelOthers={}", taskId, userId,
-                                cancelOthers);
+                        boolean cancelOthers, String gatewayId) {
+                log.info("Completing task {} with variables for user {}, cancelOthers={}, gatewayId={}",
+                                taskId, userId, cancelOthers, gatewayId);
 
                 // Build CompleteTaskRequest DTO structure expected by workflow-service
                 Map<String, Object> requestBody = new java.util.HashMap<>();
@@ -79,10 +82,16 @@ public class WorkflowClient {
                 requestBody.put("comment", variables != null ? variables.get("comment") : null);
                 requestBody.put("approved", true); // Default to true for now
 
-                String url = workflowServiceUrl + "/api/tasks/" + taskId + "/complete";
+                StringBuilder urlBuilder = new StringBuilder(workflowServiceUrl + "/api/tasks/" + taskId + "/complete");
+
                 if (cancelOthers) {
-                        url += "?cancelOthers=true";
+                        urlBuilder.append("?cancelOthers=true");
+                        if (gatewayId != null && !gatewayId.isEmpty()) {
+                                urlBuilder.append("&gatewayId=").append(gatewayId);
+                        }
                 }
+
+                String url = urlBuilder.toString();
 
                 WebClient.RequestHeadersSpec<?> spec = webClientBuilder.build()
                                 .post()
@@ -175,21 +184,15 @@ public class WorkflowClient {
 
         /**
          * Get task inbox for a user (assigned + claimable tasks).
-         * Forwards user roles header to workflow-service.
+         * Headers are automatically propagated by UserContextWebClientFilter.
          */
-        public java.util.List<Map<String, Object>> getTaskInbox(String userId, String roles) {
-                log.debug("Getting task inbox for user: {} with roles: {}", userId, roles);
+        public java.util.List<Map<String, Object>> getTaskInbox() {
+                log.debug("Getting task inbox via auto-propagated UserContext headers");
 
-                WebClient.RequestHeadersSpec<?> spec = webClientBuilder.build()
+                return webClientBuilder.build()
                                 .get()
                                 .uri(workflowServiceUrl + "/api/tasks/inbox")
-                                .header("X-User-Id", userId);
-
-                if (roles != null && !roles.isBlank()) {
-                        spec = spec.header("X-User-Roles", roles);
-                }
-
-                return spec.retrieve()
+                                .retrieve()
                                 .bodyToMono(
                                                 new org.springframework.core.ParameterizedTypeReference<java.util.List<Map<String, Object>>>() {
                                                 })

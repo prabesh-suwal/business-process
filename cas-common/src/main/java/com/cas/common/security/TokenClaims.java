@@ -45,6 +45,7 @@ public class TokenClaims {
     @AllArgsConstructor
     public static class ProductClaims {
         private List<String> roles;
+        private List<String> roleIds; // Role UUIDs for assignment matching
         private Set<String> scopes;
     }
 

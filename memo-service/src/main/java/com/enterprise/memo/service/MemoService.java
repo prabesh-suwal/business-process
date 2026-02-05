@@ -27,6 +27,7 @@ public class MemoService {
     private final MemoNumberingService numberingService;
     private final com.enterprise.memo.client.WorkflowClient workflowClient;
     private final ViewerService viewerService;
+    private final com.enterprise.memo.util.DynamicWorkflowGenerator dynamicWorkflowGenerator;
 
     // Mapper could be MapStruct, but implementing manual for now to save
     // time/complexity
@@ -133,13 +134,23 @@ public class MemoService {
 
         // Get topic to get workflowTemplateId
         var topic = memo.getTopic();
-        if (topic == null || topic.getWorkflowTemplateId() == null) {
+
+        // Check if there are workflow overrides (custom workflow defined in memo)
+        boolean hasWorkflowOverrides = memo.getWorkflowOverrides() != null
+                && Boolean.TRUE.equals(memo.getWorkflowOverrides().get("customWorkflow"));
+
+        if (topic == null || (topic.getWorkflowTemplateId() == null && !hasWorkflowOverrides)) {
             // For MVP, allow submission without workflow (just change status)
-            log.warn("No workflow configured for topic. Skipping workflow start.");
+            log.warn("No workflow configured for topic and no custom workflow. Skipping workflow start.");
             memo.setStatus(MemoStatus.SUBMITTED);
             memo.setCurrentStage("Pending Review");
             memo = memoRepository.save(memo);
             return toDTO(memo);
+        }
+
+        // If there are workflow overrides, use dynamic workflow generation
+        if (hasWorkflowOverrides) {
+            return submitMemoWithDynamicWorkflow(memo, userId);
         }
 
         // Start Workflow
@@ -203,6 +214,97 @@ public class MemoService {
         memo.setStatus(MemoStatus.SUBMITTED);
         memo.setCurrentStage("Workflow Started");
 
+        memo = memoRepository.save(memo);
+        return toDTO(memo);
+    }
+
+    /**
+     * Submit memo with dynamically generated workflow from workflow overrides.
+     * This is used when a topic doesn't have a pre-configured workflow but
+     * the user defines custom approval steps.
+     */
+    @Transactional
+    private MemoDTO submitMemoWithDynamicWorkflow(Memo memo, UUID userId) {
+        log.info("Starting dynamic workflow for memo {} with workflow overrides", memo.getId());
+
+        try {
+            // Generate BPMN from workflow overrides
+            String bpmnXml = dynamicWorkflowGenerator.generateBpmn(
+                    memo.getWorkflowOverrides(),
+                    memo.getId().toString());
+
+            String processKey = dynamicWorkflowGenerator.generateProcessKey(memo.getId().toString());
+            String processName = "Memo " + memo.getMemoNumber() + " Workflow";
+
+            // Get product ID from topic category (or use a default)
+            String productId = memo.getCategory() != null && memo.getCategory().getId() != null
+                    ? memo.getCategory().getId().toString()
+                    : "00000000-0000-0000-0000-000000000001"; // Default product ID
+
+            // Deploy the dynamic BPMN to workflow-service
+            log.info("Deploying dynamic BPMN for memo {}, processKey: {}", memo.getId(), processKey);
+            var deployResult = workflowClient.deployBpmn(processKey, processName, bpmnXml, productId);
+
+            if (deployResult == null || deployResult.processDefinitionId() == null) {
+                throw new RuntimeException("Failed to deploy dynamic workflow - no process definition returned");
+            }
+
+            log.info("Dynamic workflow deployed: processDefinitionId={}, templateId={}",
+                    deployResult.processDefinitionId(), deployResult.processTemplateId());
+
+            // Store the template ID for future reference (don't update topic - it's
+            // one-time per memo)
+            // if (deployResult.processTemplateId() != null) {
+            // memo.getTopic().setWorkflowTemplateId(deployResult.processTemplateId());
+            // }
+
+            // Prepare process variables
+            java.util.Map<String, Object> variables = new java.util.HashMap<>();
+
+            // Add memo data as nested object
+            java.util.Map<String, Object> memoMap = new java.util.HashMap<>();
+            memoMap.put("id", memo.getId().toString());
+            memoMap.put("memoNumber", memo.getMemoNumber());
+            memoMap.put("subject", memo.getSubject());
+            memoMap.put("priority", memo.getPriority());
+            if (memo.getFormData() != null) {
+                memoMap.put("formData", memo.getFormData());
+            }
+            variables.put("memo", memoMap);
+
+            // Add flat variables for backward compatibility
+            variables.put("memoId", memo.getId().toString());
+            variables.put("memoNumber", memo.getMemoNumber());
+            variables.put("subject", memo.getSubject());
+            variables.put("initiatorId", userId.toString());
+
+            // Add form data if present
+            if (memo.getFormData() != null) {
+                variables.putAll(memo.getFormData());
+            }
+
+            // Start the workflow using the deployed process definition
+            // Note: useProcessDefinitionId=true tells workflow-service to use
+            // startProcessInstanceById
+            com.enterprise.memo.dto.StartProcessRequest request = com.enterprise.memo.dto.StartProcessRequest.builder()
+                    .processTemplateId(deployResult.processDefinitionId())
+                    .useProcessDefinitionId(true) // Critical: tells service to use startProcessInstanceById
+                    .businessKey(memo.getId().toString())
+                    .title(memo.getMemoNumber() + " - " + memo.getSubject())
+                    .variables(variables)
+                    .build();
+
+            workflowClient.startProcess(request, userId);
+
+            log.info("Dynamic workflow started for memo {}", memo.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to start dynamic workflow for memo {}: {}", memo.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to start dynamic workflow: " + e.getMessage(), e);
+        }
+
+        memo.setStatus(MemoStatus.SUBMITTED);
+        memo.setCurrentStage("Workflow Started");
         memo = memoRepository.save(memo);
         return toDTO(memo);
     }

@@ -1,5 +1,7 @@
 package com.enterprise.form.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.form.dto.FormDraftDTO;
 import com.enterprise.form.dto.SaveDraftRequest;
 import com.enterprise.form.service.FormDraftService;
@@ -26,16 +28,14 @@ public class FormDraftController {
      * Save a draft.
      */
     @PostMapping
-    public ResponseEntity<FormDraftDTO> saveDraft(
-            @RequestBody SaveDraftRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestHeader(value = "X-User-Name", required = false) String userName) {
-
-        UUID uid = userId != null ? UUID.fromString(userId) : null;
-        if (uid == null) {
+    public ResponseEntity<FormDraftDTO> saveDraft(@RequestBody SaveDraftRequest request) {
+        UserContext user = UserContextHolder.getContext();
+        if (user == null || user.getUserId() == null) {
             return ResponseEntity.badRequest().build();
         }
 
+        UUID uid = UUID.fromString(user.getUserId());
+        String userName = user.getName();
         FormDraftDTO result = draftService.saveDraft(request, uid, userName);
         return ResponseEntity.ok(result);
     }
@@ -44,11 +44,9 @@ public class FormDraftController {
      * Get user's draft for a form.
      */
     @GetMapping("/form/{formId}")
-    public ResponseEntity<FormDraftDTO> getDraft(
-            @PathVariable UUID formId,
-            @RequestHeader(value = "X-User-Id") String userId) {
-
-        UUID uid = UUID.fromString(userId);
+    public ResponseEntity<FormDraftDTO> getDraft(@PathVariable UUID formId) {
+        UserContext user = UserContextHolder.require();
+        UUID uid = UUID.fromString(user.getUserId());
         return draftService.getDraft(formId, uid)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -61,10 +59,9 @@ public class FormDraftController {
     public ResponseEntity<FormDraftDTO> getDraftByEntity(
             @PathVariable UUID formId,
             @PathVariable String entityType,
-            @PathVariable UUID entityId,
-            @RequestHeader(value = "X-User-Id") String userId) {
-
-        UUID uid = UUID.fromString(userId);
+            @PathVariable UUID entityId) {
+        UserContext user = UserContextHolder.require();
+        UUID uid = UUID.fromString(user.getUserId());
         return draftService.getDraft(formId, uid, entityType, entityId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -74,10 +71,9 @@ public class FormDraftController {
      * Get all user's drafts.
      */
     @GetMapping("/my-drafts")
-    public ResponseEntity<List<FormDraftDTO>> getMyDrafts(
-            @RequestHeader(value = "X-User-Id") String userId) {
-
-        UUID uid = UUID.fromString(userId);
+    public ResponseEntity<List<FormDraftDTO>> getMyDrafts() {
+        UserContext user = UserContextHolder.require();
+        UUID uid = UUID.fromString(user.getUserId());
         return ResponseEntity.ok(draftService.getUserDrafts(uid));
     }
 
@@ -85,12 +81,10 @@ public class FormDraftController {
      * Delete a draft.
      */
     @DeleteMapping("/{draftId}")
-    public ResponseEntity<Void> deleteDraft(
-            @PathVariable UUID draftId,
-            @RequestHeader(value = "X-User-Id") String userId) {
-
+    public ResponseEntity<Void> deleteDraft(@PathVariable UUID draftId) {
         try {
-            UUID uid = UUID.fromString(userId);
+            UserContext user = UserContextHolder.require();
+            UUID uid = UUID.fromString(user.getUserId());
             draftService.deleteDraft(draftId, uid);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException | IllegalStateException e) {

@@ -14,7 +14,7 @@ import {
     Layers, MousePointer2, Rocket, Sparkles, Zap, GitBranch, Unlock, ToggleLeft, ShieldCheck, Copy, Lock, FolderPlus
 } from 'lucide-react';
 import ViewerConfigPanel from '../components/ViewerConfigPanel';
-import AssignmentConfigPanel from '../components/AssignmentConfigPanel';
+import AdvancedAssignmentTab from '../components/AdvancedAssignmentTab';
 import ConditionBuilder from '../components/ConditionBuilder';
 import { PageContainer } from '../components/PageContainer';
 import GatewayConfigPanel from '../components/GatewayConfigPanel';
@@ -123,7 +123,11 @@ const WorkflowDesignerPage = () => {
                 const configMap = {};
                 savedConfigs.forEach(c => {
                     configMap[c.taskKey] = {
-                        // New multi-select format
+                        // New rules-based format (for AdvancedAssignmentTab)
+                        rules: c.assignmentConfig?.rules || [],
+                        fallbackRoleId: c.assignmentConfig?.fallbackRoleId,
+                        completionMode: c.assignmentConfig?.completionMode || 'ANY',
+                        // Legacy multi-select format
                         roles: c.assignmentConfig?.roles || [],
                         departments: c.assignmentConfig?.departments || [],
                         users: c.assignmentConfig?.users || [],
@@ -468,6 +472,11 @@ const WorkflowDesignerPage = () => {
                 const uiConfig = stepConfigs[taskKey];
 
                 const assignmentConfig = {
+                    // New rules-based format (for AdvancedAssignmentTab)
+                    rules: uiConfig.rules || [],
+                    fallbackRoleId: uiConfig.fallbackRoleId,
+                    completionMode: uiConfig.completionMode || 'ANY',
+                    // Legacy multi-select format
                     roles: uiConfig.roles || [],
                     departments: uiConfig.departments || [],
                     users: uiConfig.users || []
@@ -513,8 +522,13 @@ const WorkflowDesignerPage = () => {
                 const savePromises = Object.keys(stepConfigs).map(taskKey => {
                     const uiConfig = stepConfigs[taskKey];
 
-                    // Build assignment config with new multi-select format
+                    // Build assignment config with new rules-based format
                     const assignmentConfig = {
+                        // New rules-based format (for AdvancedAssignmentTab)
+                        rules: uiConfig.rules || [],
+                        fallbackRoleId: uiConfig.fallbackRoleId,
+                        completionMode: uiConfig.completionMode || 'ANY',
+                        // Legacy multi-select format
                         roles: uiConfig.roles || [],
                         departments: uiConfig.departments || [],
                         users: uiConfig.users || []
@@ -998,7 +1012,7 @@ const WorkflowDesignerPage = () => {
                                 </div> {/* Close scroll wrapper and left side */}
 
                                 {/* Right Side: Configuration Panel */}
-                                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 min-h-[400px] lg:h-full overflow-hidden flex flex-col">
+                                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 max-h-[calc(100vh-200px)] overflow-hidden flex flex-col">
                                     {selectedStep ? (
                                         <StepConfigurationPanel
                                             step={selectedStep}
@@ -1157,10 +1171,22 @@ const StepConfigurationPanel = ({
                     onToggle={() => setExpandedSection(expandedSection === 'assignment' ? null : 'assignment')}
                     hasConfig={config.roles?.length > 0 || config.departments?.length > 0 || config.users?.length > 0}
                 >
-                    <AssignmentConfigPanel
+                    <AdvancedAssignmentTab
                         config={config}
                         onChange={onConfigChange}
-                        title=""
+                        roles={roles}
+                        groups={groups}
+                        departments={departments}
+                        branches={[]}
+                        regions={[]}
+                        districts={[]}
+                        states={[]}
+                        users={[]}
+                        topicId={topicId}
+                        onPreview={async (rules) => {
+                            console.log('Preview not implemented yet', rules);
+                            return [];
+                        }}
                     />
                 </ConfigSection>
 
@@ -1305,12 +1331,11 @@ const ConfigSection = ({ title, icon, isExpanded, onToggle, hasConfig, children 
             <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''
                 }`} />
         </button>
-        <div className={`overflow-hidden transition-all duration-200 ${isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
-            }`}>
+        {isExpanded && (
             <div className="px-6 py-5 bg-slate-50/50 border-t border-slate-100">
                 {children}
             </div>
-        </div>
+        )}
     </div>
 );
 

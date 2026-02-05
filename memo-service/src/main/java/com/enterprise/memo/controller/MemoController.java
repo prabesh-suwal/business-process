@@ -1,5 +1,7 @@
 package com.enterprise.memo.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.memo.dto.CreateMemoRequest;
 import com.enterprise.memo.dto.MemoDTO;
 import com.enterprise.memo.dto.UpdateMemoRequest;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,11 +30,9 @@ public class MemoController {
     private final MemoAccessService memoAccessService;
 
     @PostMapping("/draft")
-    public ResponseEntity<MemoDTO> createDraft(
-            @Valid @RequestBody CreateMemoRequest request,
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
-        // In real gateway, X-User-Id is populated. Using default for dev if missing.
-        UUID userUuid = UUID.fromString(userId);
+    public ResponseEntity<MemoDTO> createDraft(@Valid @RequestBody CreateMemoRequest request) {
+        UserContext user = UserContextHolder.require();
+        UUID userUuid = UUID.fromString(user.getUserId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(memoService.createDraft(request, userUuid));
     }
@@ -49,17 +50,16 @@ public class MemoController {
     }
 
     @GetMapping("/my-memos")
-    public ResponseEntity<List<MemoDTO>> getMyMemos(
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
-        UUID userUuid = UUID.fromString(userId);
+    public ResponseEntity<List<MemoDTO>> getMyMemos() {
+        UserContext user = UserContextHolder.require();
+        UUID userUuid = UUID.fromString(user.getUserId());
         return ResponseEntity.ok(memoService.getMyMemos(userUuid));
     }
 
     @PostMapping("/{id}/submit")
-    public ResponseEntity<MemoDTO> submitMemo(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId) {
-        UUID userUuid = UUID.fromString(userId);
+    public ResponseEntity<MemoDTO> submitMemo(@PathVariable UUID id) {
+        UserContext user = UserContextHolder.require();
+        UUID userUuid = UUID.fromString(user.getUserId());
         return ResponseEntity.ok(memoService.submitMemo(id, userUuid));
     }
 
@@ -77,14 +77,11 @@ public class MemoController {
      * This is the main endpoint for the Memos page.
      */
     @GetMapping("/accessible")
-    public ResponseEntity<List<Map<String, Object>>> getAccessibleMemos(
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
-            @RequestHeader(value = "X-User-Roles", required = false) String roles,
-            @RequestHeader(value = "X-User-Department", required = false) String departmentId) {
-
-        List<String> roleList = roles != null
-                ? java.util.Arrays.asList(roles.split(","))
-                : java.util.List.of();
+    public ResponseEntity<List<Map<String, Object>>> getAccessibleMemos() {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        List<String> roleList = new ArrayList<>(user.getRoles());
+        String departmentId = user.getDepartmentId();
 
         List<MemoAccessService.MemoWithAccess> memosWithAccess = memoAccessService.getAccessibleMemosWithReason(userId,
                 roleList, departmentId);
@@ -117,14 +114,11 @@ public class MemoController {
      * Get memos that user can view (including view-only access).
      */
     @GetMapping("/viewable")
-    public ResponseEntity<List<MemoDTO>> getViewableMemos(
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
-            @RequestHeader(value = "X-User-Roles", required = false) String roles,
-            @RequestHeader(value = "X-User-Department", required = false) String departmentId) {
-
-        List<String> roleList = roles != null
-                ? java.util.Arrays.asList(roles.split(","))
-                : java.util.List.of();
+    public ResponseEntity<List<MemoDTO>> getViewableMemos() {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        List<String> roleList = new ArrayList<>(user.getRoles());
+        String departmentId = user.getDepartmentId();
 
         return ResponseEntity.ok(memoService.getViewableMemos(userId, roleList, departmentId));
     }
@@ -133,15 +127,11 @@ public class MemoController {
      * Check if user can view a specific memo.
      */
     @GetMapping("/{id}/can-view")
-    public ResponseEntity<Boolean> canViewMemo(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Id", defaultValue = "00000000-0000-0000-0000-000000000000") String userId,
-            @RequestHeader(value = "X-User-Roles", required = false) String roles,
-            @RequestHeader(value = "X-User-Department", required = false) String departmentId) {
-
-        List<String> roleList = roles != null
-                ? java.util.Arrays.asList(roles.split(","))
-                : java.util.List.of();
+    public ResponseEntity<Boolean> canViewMemo(@PathVariable UUID id) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        List<String> roleList = new ArrayList<>(user.getRoles());
+        String departmentId = user.getDepartmentId();
 
         boolean canView = memoService.canViewMemo(id, userId, roleList, departmentId);
         return ResponseEntity.ok(canView);

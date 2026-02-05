@@ -92,6 +92,13 @@ public class MemoTopic {
     @Column(name = "override_permissions", columnDefinition = "jsonb")
     private Map<String, Object> overridePermissions;
 
+    // Default assignee configuration for all steps that don't have specific config
+    // Uses same structure as AssignmentRulesDTO: {rules: [...], fallbackRoleId:
+    // "...", completionMode: "ANY"}
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "default_assignee_config", columnDefinition = "jsonb")
+    private Map<String, Object> defaultAssigneeConfig;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;

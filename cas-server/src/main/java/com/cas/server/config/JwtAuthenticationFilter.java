@@ -61,6 +61,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return path.startsWith("/auth/") ||
                 path.startsWith("/oauth/") ||
                 path.startsWith("/.well-known/") ||
+                path.startsWith("/admin/workflow-config/") || // Public dropdown data
                 path.equals("/actuator/health");
     }
 }

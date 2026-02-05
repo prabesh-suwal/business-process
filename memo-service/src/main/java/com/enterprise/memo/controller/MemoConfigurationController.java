@@ -124,6 +124,18 @@ public class MemoConfigurationController {
     }
 
     /**
+     * Update default assignee configuration for a topic.
+     * These rules apply to workflow steps that don't have specific assignment
+     * config.
+     */
+    @PatchMapping("/topics/{topicId}/default-assignee")
+    public ResponseEntity<MemoTopic> updateTopicDefaultAssignee(
+            @PathVariable java.util.UUID topicId,
+            @RequestBody java.util.Map<String, Object> assigneeConfig) {
+        return ResponseEntity.ok(configurationService.updateTopicDefaultAssignee(topicId, assigneeConfig));
+    }
+
+    /**
      * Get workflow version history for a topic.
      * Returns all deployed versions with their process template IDs and config
      * snapshots.

@@ -20,6 +20,7 @@ public class RouteConfig {
         private final String PERSON_URL = "http://localhost:9007";
         private final String WORKFLOW_URL = "http://localhost:9002";
         private final String FORM_URL = "http://localhost:9006";
+        private final String ORG_URL = "http://localhost:9003"; // Organization service
 
         @Bean
         public RouteLocator customRouteLocator(RouteLocatorBuilder builder,
@@ -220,6 +221,43 @@ public class RouteConfig {
                                                                                 "/api/forms${segment}")
                                                                 .removeResponseHeader("WWW-Authenticate"))
                                                 .uri(FORM_URL))
+
+                                // --- Organization Service Routes ---
+                                .route("org-branches", r -> r.path("/org/api/branches", "/org/api/branches/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/org/api/branches(?<segment>/?.*)",
+                                                                                "/api/branches${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(ORG_URL))
+
+                                .route("org-departments", r -> r.path("/org/api/departments", "/org/api/departments/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/org/api/departments(?<segment>/?.*)",
+                                                                                "/api/departments${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(ORG_URL))
+
+                                .route("org-groups", r -> r.path("/org/api/groups", "/org/api/groups/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/org/api/groups(?<segment>/?.*)",
+                                                                                "/api/groups${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(ORG_URL))
+
+                                .route("org-geo", r -> r.path("/org/api/geo/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/org/api/geo(?<segment>/?.*)",
+                                                                                "/api/geo${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(ORG_URL))
 
                                 .build();
         }

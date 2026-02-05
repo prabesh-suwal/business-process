@@ -1,16 +1,19 @@
 package com.enterprise.memo.controller;
 
+import com.cas.common.security.UserContext;
+import com.cas.common.security.UserContextHolder;
 import com.enterprise.memo.dto.MemoTaskDTO;
 import com.enterprise.memo.dto.TaskActionRequest;
 import com.enterprise.memo.entity.MemoTask;
 import com.enterprise.memo.service.MemoTaskService;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -30,15 +33,13 @@ public class TaskController {
 
     /**
      * Get user's inbox (tasks assigned to them or their groups).
-     * Proxies to workflow-service.
+     * Proxies to workflow-service. Headers are auto-propagated via
+     * UserContextWebClientFilter.
      */
     @GetMapping("/inbox")
-    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getInbox(HttpServletRequest request) {
-        String userId = getUserId(request);
-        String roles = request.getHeader("X-User-Roles");
-
-        log.debug("Getting inbox for user: {} with roles: {}", userId, roles);
-        java.util.List<java.util.Map<String, Object>> tasks = workflowClient.getTaskInbox(userId, roles);
+    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getInbox() {
+        log.debug("Getting inbox for user - headers auto-propagated via WebClient filter");
+        java.util.List<java.util.Map<String, Object>> tasks = workflowClient.getTaskInbox();
         return ResponseEntity.ok(tasks);
     }
 
@@ -58,11 +59,10 @@ public class TaskController {
      * Proxies to workflow-service.
      */
     @PostMapping("/{taskId}/claim")
-    public ResponseEntity<Void> claimTask(
-            @PathVariable String taskId,
-            HttpServletRequest request) {
-        String userId = getUserId(request);
-        String userName = getUserName(request);
+    public ResponseEntity<Void> claimTask(@PathVariable String taskId) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName() != null ? user.getName() : "Anonymous User";
 
         log.info("Claiming task: {} for user: {}", taskId, userId);
         workflowClient.claimTask(taskId, userId, userName);
@@ -78,11 +78,11 @@ public class TaskController {
     @PostMapping("/{taskId}/action")
     public ResponseEntity<Void> completeTask(
             @PathVariable String taskId,
-            @RequestBody TaskActionRequest request,
-            HttpServletRequest httpRequest) {
+            @RequestBody TaskActionRequest request) {
 
-        String userId = getUserId(httpRequest);
-        String userName = getUserName(httpRequest);
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        String userName = user.getName() != null ? user.getName() : "Anonymous User";
 
         log.info("Completing task: {} with action: {} by user: {}", taskId, request.getAction(), userId);
 
@@ -94,19 +94,29 @@ public class TaskController {
         variables.put("decision", request.getAction());
         variables.put("comment", request.getComment());
 
-        // Check if we should cancel other parallel tasks
-        boolean cancelOthers = shouldCancelOtherTasks(taskId);
-        log.info("Task {} cancelOthers={}", taskId, cancelOthers);
+        // Check if we should cancel other parallel tasks and get the gateway ID
+        var cancellationInfo = getCancellationInfo(taskId);
+        boolean cancelOthers = cancellationInfo.shouldCancel();
+        String gatewayId = cancellationInfo.gatewayId();
 
-        workflowClient.completeTask(taskId, userId, userName, variables, cancelOthers);
+        log.info("Task {} cancelOthers={} gatewayId={}", taskId, cancelOthers, gatewayId);
+
+        workflowClient.completeTask(taskId, userId, userName, variables, cancelOthers, gatewayId);
         return ResponseEntity.ok().build();
     }
 
     /**
+     * Info about whether to cancel other tasks and which gateway scope to use.
+     */
+    private record CancellationInfo(boolean shouldCancel, String gatewayId) {
+    }
+
+    /**
      * Determine if completing this task should cancel other parallel tasks.
+     * Returns the gateway ID for scoped cancellation (supports nested gateways).
      * Based on gateway configuration: completion_mode=ANY and cancel_remaining=true
      */
-    private boolean shouldCancelOtherTasks(String taskId) {
+    private CancellationInfo getCancellationInfo(String taskId) {
         try {
             // Get the MemoTask to find the memo and topic
             return taskService.getByWorkflowTaskId(taskId)
@@ -114,14 +124,21 @@ public class TaskController {
                         UUID topicId = memoTask.getMemo().getTopic().getId();
                         // Check all gateways for this topic
                         var configs = gatewayConfigService.getConfigsForTopic(topicId);
-                        return configs.stream().anyMatch(config -> config
-                                .getCompletionMode() == com.enterprise.memo.entity.WorkflowGatewayConfig.CompletionMode.ANY
-                                && Boolean.TRUE.equals(config.getCancelRemaining()));
+
+                        // Find the first gateway configured with ANY mode and cancelRemaining
+                        for (var config : configs) {
+                            if (config
+                                    .getCompletionMode() == com.enterprise.memo.entity.WorkflowGatewayConfig.CompletionMode.ANY
+                                    && Boolean.TRUE.equals(config.getCancelRemaining())) {
+                                return new CancellationInfo(true, config.getGatewayId());
+                            }
+                        }
+                        return new CancellationInfo(false, null);
                     })
-                    .orElse(false);
+                    .orElse(new CancellationInfo(false, null));
         } catch (Exception e) {
             log.warn("Failed to check gateway config for task {}: {}", taskId, e.getMessage());
-            return false;
+            return new CancellationInfo(false, null);
         }
     }
 
@@ -130,11 +147,12 @@ public class TaskController {
      * Filters to only show PENDING tasks that the current user can act on.
      */
     @GetMapping("/memo/{memoId}")
-    public ResponseEntity<List<MemoTaskDTO>> getTasksForMemo(
-            @PathVariable UUID memoId,
-            HttpServletRequest httpRequest) {
-        String userId = getUserId(httpRequest);
-        List<String> userGroups = getUserGroups(httpRequest);
+    public ResponseEntity<List<MemoTaskDTO>> getTasksForMemo(@PathVariable UUID memoId) {
+        UserContext user = UserContextHolder.require();
+        String userId = user.getUserId();
+        // Use role IDs (UUIDs) for candidate groups matching - candidateGroups should
+        // store role IDs
+        List<String> userGroups = new ArrayList<>(user.getRoleIds());
 
         log.debug("getTasksForMemo: userId={}, userGroups={}", userId, userGroups);
 
@@ -172,15 +190,22 @@ public class TaskController {
             return true;
         }
 
-        // User is in candidate users
-        if (task.getCandidateUsers() != null && task.getCandidateUsers().contains(userId)) {
-            return true;
+        // User is in candidate users (parse comma-separated string)
+        String candidateUsers = task.getCandidateUsers();
+        if (candidateUsers != null && !candidateUsers.isBlank()) {
+            Set<String> candidateUserSet = Set.of(candidateUsers.split(","));
+            if (candidateUserSet.contains(userId)) {
+                return true;
+            }
         }
 
-        // User's groups match candidate groups
-        if (task.getCandidateGroups() != null && userGroups != null) {
+        // User's groups match candidate groups (parse comma-separated string)
+        String candidateGroups = task.getCandidateGroups();
+        if (candidateGroups != null && !candidateGroups.isBlank() && userGroups != null) {
+            Set<String> candidateGroupSet = Set.of(candidateGroups.split(","));
             for (String group : userGroups) {
-                if (task.getCandidateGroups().contains(group)) {
+                if (candidateGroupSet.contains(group.trim())) {
+                    log.debug("User group {} matches candidate group in {}", group, candidateGroups);
                     return true;
                 }
             }
@@ -189,35 +214,4 @@ public class TaskController {
         return false;
     }
 
-    // Helper methods to extract user info from request headers (set by gateway)
-    private String getUserId(HttpServletRequest request) {
-        // Debug: Log all headers
-        // java.util.Enumeration<String> headerNames = request.getHeaderNames();
-        // log.debug("=== Request Headers ===");
-        // while (headerNames.hasMoreElements()) {
-        // String headerName = headerNames.nextElement();
-        // log.debug(" {}: {}", headerName, request.getHeader(headerName));
-        // }
-        // log.debug("=== End Headers ===");
-
-        String userId = request.getHeader("X-User-Id");
-        if (userId == null || userId.isBlank()) {
-            throw new IllegalStateException("X-User-Id header is required but was not provided by gateway");
-        }
-        return userId;
-    }
-
-    private String getUserName(HttpServletRequest request) {
-        String name = request.getHeader("X-User-Name");
-        return name != null ? name : "Anonymous User";
-    }
-
-    private List<String> getUserGroups(HttpServletRequest request) {
-        // Gateway sends X-User-Roles header with comma-separated roles
-        String roles = request.getHeader("X-User-Roles");
-        if (roles != null && !roles.isBlank()) {
-            return List.of(roles.split(","));
-        }
-        return List.of();
-    }
 }

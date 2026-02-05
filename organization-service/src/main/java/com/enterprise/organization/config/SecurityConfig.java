@@ -1,6 +1,7 @@
 package com.enterprise.organization.config;
 
 import com.cas.common.security.JwtAuthFilter;
+import com.cas.common.security.UserContextFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +32,11 @@ public class SecurityConfig {
     }
 
     @Bean
+    public UserContextFilter userContextFilter() {
+        return new UserContextFilter();
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 // CORS is handled by the Gateway
@@ -43,7 +49,8 @@ public class SecurityConfig {
                         // All organization APIs require authentication
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(userContextFilter(), JwtAuthFilter.class);
 
         return http.build();
     }

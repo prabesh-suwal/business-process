@@ -73,7 +73,7 @@ public class GatewayConfigService {
             toUpdate.setGatewayName(config.getGatewayName());
             toUpdate.setGatewayType(config.getGatewayType());
             toUpdate.setCompletionMode(config.getCompletionMode());
-            toUpdate.setMinimumRequired(config.getMinimumRequired());   
+            toUpdate.setMinimumRequired(config.getMinimumRequired());
             toUpdate.setTotalIncomingFlows(config.getTotalIncomingFlows());
             toUpdate.setDescription(config.getDescription());
             toUpdate.setCancelRemaining(config.getCancelRemaining());

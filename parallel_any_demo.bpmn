@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:flowable="http://flowable.org/bpmn"
+                  id="Definitions_1"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!-- 
+    PARALLEL GATEWAY "ANY" COMPLETION MODE DEMO
+    
+    This diagram demonstrates:
+    1. Simple parallel gateway with ANY completion (first approval wins)
+    2. Nested parallel gateways to show scoped cancellation
+    
+    When Task A.1 or A.2 completes first:
+    - The other task in the SAME gateway scope is cancelled
+    - But Task B (in the outer flow) is NOT affected
+    
+    Configure gateway with:
+    - completion_mode: ANY
+    - cancel_remaining: true
+  -->
+
+  <bpmn:process id="parallel_any_demo" name="Parallel ANY Completion Demo" isExecutable="true">
+    
+    <!-- Start Event -->
+    <bpmn:startEvent id="StartEvent_1" name="Start">
+      <bpmn:outgoing>Flow_Start_to_Fork</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- Initial User Task: Submit Request -->
+    <bpmn:userTask id="Task_Submit" name="Submit Request" flowable:candidateGroups="submitter">
+      <bpmn:incoming>Flow_Start_to_Fork</bpmn:incoming>
+      <bpmn:outgoing>Flow_Submit_to_MainFork</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <bpmn:sequenceFlow id="Flow_Start_to_Fork" sourceRef="StartEvent_1" targetRef="Task_Submit"/>
+    <bpmn:sequenceFlow id="Flow_Submit_to_MainFork" sourceRef="Task_Submit" targetRef="Gateway_MainFork"/>
+
+    <!-- ============================================== -->
+    <!-- MAIN PARALLEL GATEWAY (OUTER) - ALL mode      -->
+    <!-- Both branches must complete                   -->
+    <!-- ============================================== -->
+    <bpmn:parallelGateway id="Gateway_MainFork" name="Main Fork (ALL)">
+      <bpmn:incoming>Flow_Submit_to_MainFork</bpmn:incoming>
+      <bpmn:outgoing>Flow_MainFork_to_BranchA</bpmn:outgoing>
+      <bpmn:outgoing>Flow_MainFork_to_TaskB</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- ============================================== -->
+    <!-- BRANCH A: Contains NESTED parallel gateway    -->
+    <!-- with ANY completion mode                      -->
+    <!-- ============================================== -->
+    <bpmn:sequenceFlow id="Flow_MainFork_to_BranchA" sourceRef="Gateway_MainFork" targetRef="Gateway_NestedFork"/>
+
+    <!-- NESTED PARALLEL GATEWAY - ANY mode -->
+    <!-- First approval wins, cancels the other -->
+    <bpmn:parallelGateway id="Gateway_NestedFork" name="Approval Fork (ANY)">
+      <bpmn:incoming>Flow_MainFork_to_BranchA</bpmn:incoming>
+      <bpmn:outgoing>Flow_NestedFork_to_A1</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NestedFork_to_A2</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <flowable:properties>
+          <flowable:property name="completion_mode" value="ANY"/>
+          <flowable:property name="cancel_remaining" value="true"/>
+        </flowable:properties>
+      </bpmn:extensionElements>
+    </bpmn:parallelGateway>
+
+    <!-- Branch A.1: Manager Approval -->
+    <bpmn:userTask id="Task_A1_ManagerApproval" name="Manager Approval" flowable:candidateGroups="manager">
+      <bpmn:incoming>Flow_NestedFork_to_A1</bpmn:incoming>
+      <bpmn:outgoing>Flow_A1_to_NestedJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Branch A.2: Director Approval -->
+    <bpmn:userTask id="Task_A2_DirectorApproval" name="Director Approval" flowable:candidateGroups="director">
+      <bpmn:incoming>Flow_NestedFork_to_A2</bpmn:incoming>
+      <bpmn:outgoing>Flow_A2_to_NestedJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_NestedFork_to_A1" sourceRef="Gateway_NestedFork" targetRef="Task_A1_ManagerApproval"/>
+    <bpmn:sequenceFlow id="Flow_NestedFork_to_A2" sourceRef="Gateway_NestedFork" targetRef="Task_A2_DirectorApproval"/>
+
+    <!-- Nested Join Gateway -->
+    <bpmn:parallelGateway id="Gateway_NestedJoin" name="Approval Join">
+      <bpmn:incoming>Flow_A1_to_NestedJoin</bpmn:incoming>
+      <bpmn:incoming>Flow_A2_to_NestedJoin</bpmn:incoming>
+      <bpmn:outgoing>Flow_NestedJoin_to_MainJoin</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <bpmn:sequenceFlow id="Flow_A1_to_NestedJoin" sourceRef="Task_A1_ManagerApproval" targetRef="Gateway_NestedJoin"/>
+    <bpmn:sequenceFlow id="Flow_A2_to_NestedJoin" sourceRef="Task_A2_DirectorApproval" targetRef="Gateway_NestedJoin"/>
+    <bpmn:sequenceFlow id="Flow_NestedJoin_to_MainJoin" sourceRef="Gateway_NestedJoin" targetRef="Gateway_MainJoin"/>
+
+    <!-- ============================================== -->
+    <!-- BRANCH B: Independent task (not cancelled)    -->
+    <!-- ============================================== -->
+    <bpmn:sequenceFlow id="Flow_MainFork_to_TaskB" sourceRef="Gateway_MainFork" targetRef="Task_B_Finance"/>
+
+    <bpmn:userTask id="Task_B_Finance" name="Finance Review" flowable:candidateGroups="finance">
+      <bpmn:incoming>Flow_MainFork_to_TaskB</bpmn:incoming>
+      <bpmn:outgoing>Flow_B_to_MainJoin</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_B_to_MainJoin" sourceRef="Task_B_Finance" targetRef="Gateway_MainJoin"/>
+
+    <!-- ============================================== -->
+    <!-- MAIN JOIN GATEWAY                             -->
+    <!-- ============================================== -->
+    <bpmn:parallelGateway id="Gateway_MainJoin" name="Main Join">
+      <bpmn:incoming>Flow_NestedJoin_to_MainJoin</bpmn:incoming>
+      <bpmn:incoming>Flow_B_to_MainJoin</bpmn:incoming>
+      <bpmn:outgoing>Flow_MainJoin_to_Final</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- Final Approval -->
+    <bpmn:userTask id="Task_FinalApproval" name="Final Approval" flowable:candidateGroups="admin">
+      <bpmn:incoming>Flow_MainJoin_to_Final</bpmn:incoming>
+      <bpmn:outgoing>Flow_Final_to_End</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="Flow_MainJoin_to_Final" sourceRef="Gateway_MainJoin" targetRef="Task_FinalApproval"/>
+    <bpmn:sequenceFlow id="Flow_Final_to_End" sourceRef="Task_FinalApproval" targetRef="EndEvent_1"/>
+
+    <!-- End Event -->
+    <bpmn:endEvent id="EndEvent_1" name="End">
+      <bpmn:incoming>Flow_Final_to_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <!-- ============================================== -->
+  <!-- DIAGRAM LAYOUT                                -->
+  <!-- ============================================== -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="parallel_any_demo">
+      
+      <!-- Start Event -->
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="152" y="202" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="158" y="245" width="24" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Submit Task -->
+      <bpmndi:BPMNShape id="Task_Submit_di" bpmnElement="Task_Submit">
+        <dc:Bounds x="240" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Main Fork Gateway -->
+      <bpmndi:BPMNShape id="Gateway_MainFork_di" bpmnElement="Gateway_MainFork">
+        <dc:Bounds x="395" y="195" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="380" y="171" width="80" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Nested Fork Gateway (ANY mode) -->
+      <bpmndi:BPMNShape id="Gateway_NestedFork_di" bpmnElement="Gateway_NestedFork">
+        <dc:Bounds x="505" y="95" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="485" y="65" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task A.1: Manager Approval -->
+      <bpmndi:BPMNShape id="Task_A1_di" bpmnElement="Task_A1_ManagerApproval">
+        <dc:Bounds x="620" y="20" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Task A.2: Director Approval -->
+      <bpmndi:BPMNShape id="Task_A2_di" bpmnElement="Task_A2_DirectorApproval">
+        <dc:Bounds x="620" y="140" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Nested Join Gateway -->
+      <bpmndi:BPMNShape id="Gateway_NestedJoin_di" bpmnElement="Gateway_NestedJoin">
+        <dc:Bounds x="785" y="95" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="775" y="71" width="70" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Task B: Finance Review -->
+      <bpmndi:BPMNShape id="Task_B_di" bpmnElement="Task_B_Finance">
+        <dc:Bounds x="620" y="280" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Main Join Gateway -->
+      <bpmndi:BPMNShape id="Gateway_MainJoin_di" bpmnElement="Gateway_MainJoin">
+        <dc:Bounds x="895" y="195" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="893" y="171" width="54" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Final Approval Task -->
+      <bpmndi:BPMNShape id="Task_FinalApproval_di" bpmnElement="Task_FinalApproval">
+        <dc:Bounds x="1000" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- End Event -->
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="1152" y="202" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1160" y="245" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Sequence Flows -->
+      <bpmndi:BPMNEdge id="Flow_Start_to_Fork_di" bpmnElement="Flow_Start_to_Fork">
+        <di:waypoint x="188" y="220"/>
+        <di:waypoint x="240" y="220"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Submit_to_MainFork_di" bpmnElement="Flow_Submit_to_MainFork">
+        <di:waypoint x="340" y="220"/>
+        <di:waypoint x="395" y="220"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_MainFork_to_BranchA_di" bpmnElement="Flow_MainFork_to_BranchA">
+        <di:waypoint x="420" y="195"/>
+        <di:waypoint x="420" y="120"/>
+        <di:waypoint x="505" y="120"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_NestedFork_to_A1_di" bpmnElement="Flow_NestedFork_to_A1">
+        <di:waypoint x="530" y="95"/>
+        <di:waypoint x="530" y="60"/>
+        <di:waypoint x="620" y="60"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_NestedFork_to_A2_di" bpmnElement="Flow_NestedFork_to_A2">
+        <di:waypoint x="530" y="145"/>
+        <di:waypoint x="530" y="180"/>
+        <di:waypoint x="620" y="180"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_A1_to_NestedJoin_di" bpmnElement="Flow_A1_to_NestedJoin">
+        <di:waypoint x="720" y="60"/>
+        <di:waypoint x="810" y="60"/>
+        <di:waypoint x="810" y="95"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_A2_to_NestedJoin_di" bpmnElement="Flow_A2_to_NestedJoin">
+        <di:waypoint x="720" y="180"/>
+        <di:waypoint x="810" y="180"/>
+        <di:waypoint x="810" y="145"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_NestedJoin_to_MainJoin_di" bpmnElement="Flow_NestedJoin_to_MainJoin">
+        <di:waypoint x="835" y="120"/>
+        <di:waypoint x="920" y="120"/>
+        <di:waypoint x="920" y="195"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_MainFork_to_TaskB_di" bpmnElement="Flow_MainFork_to_TaskB">
+        <di:waypoint x="420" y="245"/>
+        <di:waypoint x="420" y="320"/>
+        <di:waypoint x="620" y="320"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_B_to_MainJoin_di" bpmnElement="Flow_B_to_MainJoin">
+        <di:waypoint x="720" y="320"/>
+        <di:waypoint x="920" y="320"/>
+        <di:waypoint x="920" y="245"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_MainJoin_to_Final_di" bpmnElement="Flow_MainJoin_to_Final">
+        <di:waypoint x="945" y="220"/>
+        <di:waypoint x="1000" y="220"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_Final_to_End_di" bpmnElement="Flow_Final_to_End">
+        <di:waypoint x="1100" y="220"/>
+        <di:waypoint x="1152" y="220"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
