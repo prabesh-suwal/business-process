@@ -1,5 +1,7 @@
 package com.enterprise.policyengine.service;
 
+import com.cas.common.logging.audit.AuditEventType;
+import com.cas.common.logging.audit.AuditLogger;
 import com.enterprise.policyengine.dto.PolicyRequest;
 import com.enterprise.policyengine.dto.PolicyResponse;
 import com.enterprise.policyengine.entity.*;
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
 public class PolicyService {
 
     private final PolicyRepository policyRepository;
+    private final AuditLogger auditLogger;
 
     @Transactional(readOnly = true)
     public List<PolicyResponse> findAll() {
@@ -106,6 +109,16 @@ public class PolicyService {
         Policy saved = policyRepository.save(policy);
         log.info("Created policy: {} (id={})", saved.getName(), saved.getId());
 
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE_POLICY)
+                .action("Created new policy")
+                .module("POLICY")
+                .entity("POLICY", saved.getId().toString())
+                .businessKey(saved.getName())
+                .newValue(PolicyResponse.fromEntity(saved))
+                .success();
+
         return PolicyResponse.fromEntity(saved);
     }
 
@@ -119,6 +132,9 @@ public class PolicyService {
                 && policyRepository.existsByName(request.getName())) {
             throw new IllegalArgumentException("Policy with name already exists: " + request.getName());
         }
+
+        // Capture old state
+        PolicyResponse oldState = PolicyResponse.fromEntity(policy);
 
         // Update basic fields
         policy.setName(request.getName());
@@ -176,6 +192,17 @@ public class PolicyService {
         Policy saved = policyRepository.save(policy);
         log.info("Updated policy: {} (version={})", saved.getName(), saved.getVersion());
 
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE_POLICY)
+                .action("Updated policy")
+                .module("POLICY")
+                .entity("POLICY", id.toString())
+                .businessKey(saved.getName())
+                .oldValue(oldState)
+                .newValue(PolicyResponse.fromEntity(saved))
+                .success();
+
         return PolicyResponse.fromEntity(saved);
     }
 
@@ -184,8 +211,18 @@ public class PolicyService {
         Policy policy = policyRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Policy not found: " + id));
 
+        String policyName = policy.getName();
         policyRepository.delete(policy);
-        log.info("Deleted policy: {} (id={})", policy.getName(), id);
+        log.info("Deleted policy: {} (id={})", policyName, id);
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.DELETE_POLICY)
+                .action("Deleted policy")
+                .module("POLICY")
+                .entity("POLICY", id.toString())
+                .businessKey(policyName)
+                .success();
     }
 
     @Transactional
@@ -196,6 +233,15 @@ public class PolicyService {
         policy.setActive(true);
         Policy saved = policyRepository.save(policy);
         log.info("Activated policy: {}", saved.getName());
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.ACTIVATE)
+                .action("Activated policy")
+                .module("POLICY")
+                .entity("POLICY", id.toString())
+                .businessKey(saved.getName())
+                .success();
 
         return PolicyResponse.fromEntity(saved);
     }
@@ -208,6 +254,15 @@ public class PolicyService {
         policy.setActive(false);
         Policy saved = policyRepository.save(policy);
         log.info("Deactivated policy: {}", saved.getName());
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.DEACTIVATE)
+                .action("Deactivated policy")
+                .module("POLICY")
+                .entity("POLICY", id.toString())
+                .businessKey(saved.getName())
+                .success();
 
         return PolicyResponse.fromEntity(saved);
     }

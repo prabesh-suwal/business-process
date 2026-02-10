@@ -7,7 +7,9 @@ import DashboardPage from './pages/DashboardPage'
 import UsersPage from './pages/UsersPage'
 import RolesPage from './pages/RolesPage'
 import ClientsPage from './pages/ClientsPage'
-import AuditLogsPage from './pages/AuditLogsPage'
+import AuditLogsPage from './pages/logs/AuditLogsPage'
+import ApiLogsPage from './pages/logs/ApiLogsPage'
+import ActivityLogsPage from './pages/logs/ActivityLogsPage'
 import PoliciesPage from './pages/PoliciesPage'
 import ProductsPage from './pages/ProductsPage'
 import PermissionsPage from './pages/PermissionsPage'
@@ -46,7 +48,10 @@ export default function App() {
                 <Route path="products" element={<ProductsPage />} />
                 <Route path="permissions" element={<PermissionsPage />} />
                 <Route path="clients" element={<ClientsPage />} />
-                <Route path="audit-logs" element={<AuditLogsPage />} />
+                {/* Logs Section */}
+                <Route path="logs/audit" element={<AuditLogsPage />} />
+                <Route path="logs/api" element={<ApiLogsPage />} />
+                <Route path="logs/activity" element={<ActivityLogsPage />} />
                 <Route path="policies" element={<PoliciesPage />} />
                 <Route path="branches" element={<BranchesPage />} />
                 <Route path="departments" element={<DepartmentsPage />} />

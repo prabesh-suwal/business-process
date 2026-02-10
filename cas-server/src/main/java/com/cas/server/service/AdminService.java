@@ -1,5 +1,8 @@
 package com.cas.server.service;
 
+import com.cas.common.logging.audit.AuditEventType;
+import com.cas.common.logging.audit.AuditLogger;
+
 import com.cas.server.domain.product.Permission;
 import com.cas.server.domain.product.Product;
 import com.cas.server.domain.role.Role;
@@ -31,6 +34,7 @@ public class AdminService {
     private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
+    private final AuditLogger auditLogger;
 
     // ==================== USER MANAGEMENT ====================
 
@@ -97,6 +101,16 @@ public class AdminService {
 
         user = userRepository.save(user);
         log.info("Created user: {}", user.getUsername());
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE)
+                .action("Created new user")
+                .module("USER_MANAGEMENT")
+                .entity("USER", user.getId().toString())
+                .businessKey(user.getUsername())
+                .success();
+
         return toUserDto(user);
     }
 
@@ -127,6 +141,16 @@ public class AdminService {
 
         user = userRepository.save(user);
         log.info("Updated user: {}", user.getUsername());
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated user")
+                .module("USER_MANAGEMENT")
+                .entity("USER", id.toString())
+                .businessKey(user.getUsername())
+                .success();
+
         return toUserDto(user);
     }
 
@@ -134,9 +158,19 @@ public class AdminService {
     public void deleteUser(UUID id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found: " + id));
+        String username = user.getUsername();
         user.setStatus(User.UserStatus.LOCKED);
         userRepository.save(user);
-        log.info("Deactivated user: {}", user.getUsername());
+        log.info("Deactivated user: {}", username);
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.DELETE)
+                .action("Deactivated user")
+                .module("USER_MANAGEMENT")
+                .entity("USER", id.toString())
+                .businessKey(username)
+                .success();
     }
 
     @Transactional
@@ -161,6 +195,17 @@ public class AdminService {
         }
 
         log.info("Assigned {} roles to user {}", roleIds.size(), user.getUsername());
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.GRANT_ROLE)
+                .action("Assigned roles to user")
+                .module("USER_MANAGEMENT")
+                .entity("USER_ROLES", userId.toString())
+                .businessKey(user.getUsername())
+                .remarks("Assigned " + roleIds.size() + " roles")
+                .success();
+
         return toUserDtoWithRoles(user);
     }
 
@@ -402,6 +447,15 @@ public class AdminService {
 
         role = roleRepository.save(role);
         log.info("Created role: {} for product {}", role.getCode(), product.getCode());
+
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE)
+                .action("Created new role")
+                .module("AUTHORIZATION")
+                .entity("ROLE", role.getId().toString())
+                .businessKey(role.getCode())
+                .success();
+
         return toRoleDto(role);
     }
 
@@ -426,6 +480,15 @@ public class AdminService {
 
         role = roleRepository.save(role);
         log.info("Updated role: {}", role.getCode());
+
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated role")
+                .module("AUTHORIZATION")
+                .entity("ROLE", id.toString())
+                .businessKey(role.getCode())
+                .success();
+
         return toRoleDto(role);
     }
 
@@ -438,8 +501,17 @@ public class AdminService {
             throw new RuntimeException("Cannot delete system role");
         }
 
+        String roleCode = role.getCode();
         roleRepository.delete(role);
-        log.info("Deleted role: {}", role.getCode());
+        log.info("Deleted role: {}", roleCode);
+
+        auditLogger.log()
+                .eventType(AuditEventType.DELETE)
+                .action("Deleted role")
+                .module("AUTHORIZATION")
+                .entity("ROLE", id.toString())
+                .businessKey(roleCode)
+                .success();
     }
 
     @Transactional
@@ -457,6 +529,16 @@ public class AdminService {
         role.setPermissions(permissions);
         role = roleRepository.save(role);
         log.info("Set {} permissions for role {}", permissionIds.size(), role.getCode());
+
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated role permissions")
+                .module("AUTHORIZATION")
+                .entity("ROLE_PERMISSIONS", roleId.toString())
+                .businessKey(role.getCode())
+                .remarks("Set " + permissionIds.size() + " permissions")
+                .success();
+
         return toRoleDto(role);
     }
 
@@ -508,6 +590,15 @@ public class AdminService {
         createFullAccessPermission(product);
 
         log.info("Created product: {} with full access permission", product.getCode());
+
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE)
+                .action("Created new product")
+                .module("ADMIN")
+                .entity("PRODUCT", product.getId().toString())
+                .businessKey(product.getCode())
+                .success();
+
         return toProductDto(product);
     }
 
@@ -555,6 +646,15 @@ public class AdminService {
 
         product = productRepository.save(product);
         log.info("Updated product: {}", product.getCode());
+
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated product")
+                .module("ADMIN")
+                .entity("PRODUCT", product.getId().toString())
+                .businessKey(code)
+                .success();
+
         return toProductDto(product);
     }
 
@@ -567,6 +667,14 @@ public class AdminService {
         product.setStatus(Product.ProductStatus.INACTIVE);
         productRepository.save(product);
         log.info("Deactivated product: {}", code);
+
+        auditLogger.log()
+                .eventType(AuditEventType.DELETE)
+                .action("Deactivated product")
+                .module("ADMIN")
+                .entity("PRODUCT", product.getId().toString())
+                .businessKey(code)
+                .success();
     }
 
     @Transactional
@@ -585,6 +693,15 @@ public class AdminService {
 
         permission = permissionRepository.save(permission);
         log.info("Created permission: {} for product {}", permission.getCode(), productCode);
+
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE)
+                .action("Created new permission")
+                .module("AUTHORIZATION")
+                .entity("PERMISSION", permission.getId().toString())
+                .businessKey(permission.getCode())
+                .success();
+
         return toPermissionDto(permission);
     }
 
@@ -601,6 +718,15 @@ public class AdminService {
 
         permission = permissionRepository.save(permission);
         log.info("Updated permission: {}", permission.getCode());
+
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated permission")
+                .module("AUTHORIZATION")
+                .entity("PERMISSION", permId.toString())
+                .businessKey(permission.getCode())
+                .success();
+
         return toPermissionDto(permission);
     }
 
@@ -609,8 +735,17 @@ public class AdminService {
         Permission permission = permissionRepository.findById(permId)
                 .orElseThrow(() -> new RuntimeException("Permission not found: " + permId));
 
+        String permCode = permission.getCode();
         permissionRepository.delete(permission);
-        log.info("Deleted permission: {}", permission.getCode());
+        log.info("Deleted permission: {}", permCode);
+
+        auditLogger.log()
+                .eventType(AuditEventType.DELETE)
+                .action("Deleted permission")
+                .module("AUTHORIZATION")
+                .entity("PERMISSION", permId.toString())
+                .businessKey(permCode)
+                .success();
     }
 
     // ==================== STANDALONE PERMISSION CRUD ====================

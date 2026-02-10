@@ -61,3 +61,7 @@ logging:
   level:
     org.flowable: INFO
     com.enterprise.workflow: DEBUG
+
+# Audit Configuration (other values have defaults in cas-common)
+audit:
+  service-name: workflow-service

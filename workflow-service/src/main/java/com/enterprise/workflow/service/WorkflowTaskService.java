@@ -1,5 +1,7 @@
 package com.enterprise.workflow.service;
 
+import com.cas.common.logging.audit.AuditEventType;
+import com.cas.common.logging.audit.AuditLogger;
 import com.enterprise.workflow.dto.*;
 import com.enterprise.workflow.entity.ActionTimeline;
 import com.enterprise.workflow.entity.ProcessInstanceMetadata;
@@ -42,6 +44,7 @@ public class WorkflowTaskService {
     private final WebClient.Builder webClientBuilder;
     @Lazy
     private final ProcessAnalyzerService processAnalyzerService;
+    private final AuditLogger auditLogger;
 
     @Value("${memo.service.url:http://localhost:9008}")
     private String memoServiceUrl;
@@ -200,6 +203,15 @@ public class WorkflowTaskService {
                 .build();
         actionTimelineRepository.save(timelineEvent);
 
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.CLAIM)
+                .action("Claimed workflow task")
+                .module("WORKFLOW")
+                .entity("TASK", taskId)
+                .remarks("Task: " + task.getName())
+                .success();
+
         log.info("Task {} claimed by user {}", taskId, userName);
 
         return getTask(taskId);
@@ -230,6 +242,15 @@ public class WorkflowTaskService {
                 .metadata(Map.of("action", "unclaimed"))
                 .build();
         actionTimelineRepository.save(timelineEvent);
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.UNCLAIM)
+                .action("Released workflow task back to pool")
+                .module("WORKFLOW")
+                .entity("TASK", taskId)
+                .remarks("Task: " + task.getName())
+                .success();
 
         log.info("Task {} unclaimed by user {}", taskId, userId);
     }
@@ -273,6 +294,15 @@ public class WorkflowTaskService {
                         "hasComment", request.getComment() != null))
                 .build();
         actionTimelineRepository.save(timelineEvent);
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.COMPLETE)
+                .action("Completed workflow task")
+                .module("WORKFLOW")
+                .entity("TASK", taskId)
+                .remarks("Task: " + task.getName() + ", Approved: " + request.isApproved())
+                .success();
 
         // Notify memo-service of task completion
         notifyMemoServiceTaskCompleted(taskId, request.isApproved() ? "APPROVE" : "REJECT", userName);
@@ -596,6 +626,15 @@ public class WorkflowTaskService {
                 .metadata(Map.of("delegateTo", delegateTo))
                 .build();
         actionTimelineRepository.save(timelineEvent);
+
+        // Audit log
+        auditLogger.log()
+                .eventType(AuditEventType.DELEGATE)
+                .action("Delegated workflow task")
+                .module("WORKFLOW")
+                .entity("TASK", taskId)
+                .remarks("Task: " + task.getName() + ", Delegated to: " + delegateTo)
+                .success();
 
         log.info("Task {} delegated to {} by user {}", taskId, delegateTo, delegatedByName);
     }

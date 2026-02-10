@@ -1,5 +1,7 @@
 package com.enterprise.organization.service;
 
+import com.cas.common.logging.audit.AuditEventType;
+import com.cas.common.logging.audit.AuditLogger;
 import com.enterprise.organization.dto.DepartmentDto;
 import com.enterprise.organization.entity.Department;
 import com.enterprise.organization.repository.BranchRepository;
@@ -20,6 +22,7 @@ public class DepartmentService {
 
     private final DepartmentRepository departmentRepository;
     private final BranchRepository branchRepository;
+    private final AuditLogger auditLogger;
 
     public List<DepartmentDto> getAllDepartments() {
         return departmentRepository.findByStatusOrderByName(Department.Status.ACTIVE)
@@ -61,6 +64,17 @@ public class DepartmentService {
 
         dept = departmentRepository.save(dept);
         log.info("Created department: {}", dept.getName());
+
+        // Audit log with builder pattern
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE)
+                .action("Created new department")
+                .module("ORGANIZATION")
+                .entity("DEPARTMENT", dept.getId().toString())
+                .businessKey(dept.getCode())
+                .newValue(toDto(dept))
+                .success();
+
         return toDto(dept);
     }
 
@@ -68,6 +82,9 @@ public class DepartmentService {
     public DepartmentDto updateDepartment(UUID id, DepartmentDto.UpdateRequest request) {
         Department dept = departmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Department not found: " + id));
+
+        // Capture old state for audit
+        DepartmentDto oldState = toDto(dept);
 
         if (request.getName() != null)
             dept.setName(request.getName());
@@ -80,6 +97,18 @@ public class DepartmentService {
 
         dept = departmentRepository.save(dept);
         log.info("Updated department: {}", dept.getName());
+
+        // Audit log with builder pattern
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated department")
+                .module("ORGANIZATION")
+                .entity("DEPARTMENT", id.toString())
+                .businessKey(dept.getCode())
+                .oldValue(oldState)
+                .newValue(toDto(dept))
+                .success();
+
         return toDto(dept);
     }
 

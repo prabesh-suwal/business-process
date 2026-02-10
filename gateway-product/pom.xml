@@ -21,6 +21,14 @@
             <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
         </dependency>
 
+        <!-- CAS Common -->
+        <!-- spring-boot-starter-web and spring-boot-starter-security are optional in cas-common -->
+        <!-- so they won't be pulled transitively into this reactive gateway -->
+        <dependency>
+            <groupId>com.cas</groupId>
+            <artifactId>cas-common</artifactId>
+        </dependency>
+
         <!-- Spring Cloud Consul -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -41,6 +49,12 @@
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Spring Security (for SecurityConfig - CSRF disable) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
         <!-- Redis for rate limiting -->

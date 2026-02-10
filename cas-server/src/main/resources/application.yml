@@ -83,3 +83,10 @@ logging:
     com.cas: DEBUG
     org.springframework.security: DEBUG
     org.flywaydb: DEBUG
+
+# Audit Configuration (other values have defaults in cas-common)
+audit:
+  service-url: http://localhost:9009
+  service-name: cas-server
+  default-product-code: CAS
+  enabled: true

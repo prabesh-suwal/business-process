@@ -67,3 +67,7 @@ logging:
   level:
     com.enterprise.memo: DEBUG
     org.springframework.web: INFO
+
+# Audit Configuration (other values have defaults in cas-common)
+audit:
+  service-name: memo-service

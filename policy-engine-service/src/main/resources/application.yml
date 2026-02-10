@@ -97,3 +97,7 @@ policy-engine:
 cas:
   jwks-url: http://localhost:9000/.well-known/jwks.json
   allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:5175
+
+# Audit Configuration (other values have defaults in cas-common)
+audit:
+  service-name: policy-engine-service

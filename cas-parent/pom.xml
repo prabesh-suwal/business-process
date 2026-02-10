@@ -27,10 +27,12 @@
         <module>../workflow-service</module>
         <module>../form-service</module>
         <module>../memo-service</module>
+        <module>../audit-service</module>
     </modules>
 
     <properties>
         <java.version>21</java.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
         <spring-cloud.version>2025.1.0</spring-cloud.version>
         <jjwt.version>0.12.6</jjwt.version>
         <mapstruct.version>1.6.3</mapstruct.version>
@@ -42,6 +44,15 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Boot Dependencies BOM (for explicit version management in Spring Boot 4.0) -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- Spring Cloud BOM -->
             <dependency>
                 <groupId>org.springframework.cloud</groupId>

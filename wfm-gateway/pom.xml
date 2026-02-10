@@ -16,16 +16,26 @@
     <description>API Gateway for Workflow Management System</description>
 
     <dependencies>
-        <!-- CAS Common -->
+        <!-- CAS Common (excluding web dependencies for gateway compatibility) -->
         <dependency>
             <groupId>com.cas</groupId>
             <artifactId>cas-common</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.springframework</groupId>
+                    <artifactId>spring-webmvc</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Spring Cloud Gateway -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-gateway</artifactId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
         </dependency>
 
         <!-- Spring Boot WebFlux -->

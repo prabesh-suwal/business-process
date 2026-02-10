@@ -146,6 +146,14 @@ spring:
               filters:
                 - RewritePath=/forms/submissions(?<segment>/?.*), /api/submissions${segment}
 
+            # Audit Service routes
+            - id: audit-events
+              uri: http://localhost:9009
+              predicates:
+                - Path=/audit,/audit/**
+              filters:
+                - RewritePath=/audit(?<segment>/?.*), /api/audit-events${segment}
+
             # JWKS endpoint (public)
             - id: jwks
               uri: http://localhost:9000

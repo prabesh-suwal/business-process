@@ -17,15 +17,27 @@
 
     <dependencies>
         <!-- Spring Web (for DTOs and validation) -->
+        <!-- Optional: servlet-based services declare this explicitly -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- AOP for @Auditable aspect -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-aop</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
         </dependency>
 
         <!-- JWT -->
@@ -48,16 +60,25 @@
             <artifactId>mapstruct</artifactId>
         </dependency>
 
-        <!-- Spring Security (for SecurityContext) -->
+        <!-- Spring Security (for SecurityContext in audit) -->
+        <!-- Optional: prevents auto-configuring security in downstream services -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- WebFlux (for WebClient filter support) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- Spring Cloud Gateway (optional, for gateway filter support) -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Test -->

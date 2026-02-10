@@ -1,0 +1,52 @@
+server:
+  port: 9009
+  error:
+    include-message: always
+    include-stacktrace: always
+
+spring:
+  application:
+    name: audit-service
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/audit_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+  
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        service-name: ${spring.application.name}
+        health-check-interval: 10s
+        instance-id: ${spring.application.name}:${random.value}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.enterprise.audit: DEBUG
+    org.hibernate.SQL: DEBUG

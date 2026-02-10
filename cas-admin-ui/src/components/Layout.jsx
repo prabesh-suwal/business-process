@@ -44,9 +44,20 @@ export default function Layout() {
                                 <span>🔌</span> API Clients
                             </NavLink>
                         </li>
+                        <li className="nav-section">Logs</li>
                         <li>
-                            <NavLink to="/audit-logs">
-                                <span>📋</span> Audit Logs
+                            <NavLink to="/logs/audit">
+                                <span>�</span> Audit Logs
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink to="/logs/api">
+                                <span>🌐</span> API Logs
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink to="/logs/activity">
+                                <span>📋</span> Activity Logs
                             </NavLink>
                         </li>
                         <li>

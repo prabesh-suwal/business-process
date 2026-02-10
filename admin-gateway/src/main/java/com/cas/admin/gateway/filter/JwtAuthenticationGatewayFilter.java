@@ -106,6 +106,7 @@ public class JwtAuthenticationGatewayFilter implements GlobalFilter, Ordered {
                     ServerHttpRequest.Builder requestBuilder = request.mutate()
                             .header("X-User-Id", claims.getSubject())
                             .header("X-User-Email", claims.get("email", String.class))
+                            .header("X-User-Name", claims.get("name", String.class))
                             .header("X-Token-Type", claims.get("type", String.class));
 
                     // Add product claims as JSON header for downstream services

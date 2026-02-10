@@ -78,3 +78,7 @@ cas:
 policy:
   engine:
     url: http://localhost:9001
+
+# Audit Configuration (other values have defaults in cas-common)
+audit:
+  service-name: organization-service

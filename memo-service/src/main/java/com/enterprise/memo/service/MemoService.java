@@ -1,5 +1,7 @@
 package com.enterprise.memo.service;
 
+import com.cas.common.logging.audit.AuditEventType;
+import com.cas.common.logging.audit.AuditLogger;
 import com.enterprise.memo.dto.CreateMemoRequest;
 import com.enterprise.memo.dto.MemoDTO;
 import com.enterprise.memo.dto.UpdateMemoRequest;
@@ -28,6 +30,7 @@ public class MemoService {
     private final com.enterprise.memo.client.WorkflowClient workflowClient;
     private final ViewerService viewerService;
     private final com.enterprise.memo.util.DynamicWorkflowGenerator dynamicWorkflowGenerator;
+    private final AuditLogger auditLogger;
 
     // Mapper could be MapStruct, but implementing manual for now to save
     // time/complexity
@@ -77,6 +80,17 @@ public class MemoService {
         }
 
         memo = memoRepository.save(memo);
+
+        // Audit log with builder pattern
+        auditLogger.log()
+                .eventType(AuditEventType.CREATE)
+                .action("Created new memo draft")
+                .module("MEMO")
+                .entity("MEMO", memo.getId().toString())
+                .businessKey(memoNumber)
+                .newValue(toDTO(memo))
+                .success();
+
         return toDTO(memo);
     }
 
@@ -103,6 +117,9 @@ public class MemoService {
             throw new RuntimeException("Only DRAFT memos can be edited");
         }
 
+        // Capture old state
+        MemoDTO oldState = toDTO(memo);
+
         if (request.getSubject() != null) {
             memo.setSubject(request.getSubject());
         }
@@ -120,6 +137,18 @@ public class MemoService {
         }
 
         memo = memoRepository.save(memo);
+
+        // Audit log with builder pattern
+        auditLogger.log()
+                .eventType(AuditEventType.UPDATE)
+                .action("Updated memo content")
+                .module("MEMO")
+                .entity("MEMO", id.toString())
+                .businessKey(memo.getMemoNumber())
+                .oldValue(oldState)
+                .newValue(toDTO(memo))
+                .success();
+
         return toDTO(memo);
     }
 
@@ -213,8 +242,18 @@ public class MemoService {
 
         memo.setStatus(MemoStatus.SUBMITTED);
         memo.setCurrentStage("Workflow Started");
-
         memo = memoRepository.save(memo);
+
+        // Audit log with builder pattern
+        auditLogger.log()
+                .eventType(AuditEventType.SUBMIT)
+                .action("Submitted memo for approval")
+                .module("WORKFLOW")
+                .entity("MEMO", id.toString())
+                .businessKey(memo.getMemoNumber())
+                .newValue(toDTO(memo))
+                .success();
+
         return toDTO(memo);
     }
 
@@ -314,11 +353,23 @@ public class MemoService {
         Memo memo = memoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Memo not found"));
 
+        MemoStatus oldStatus = memo.getStatus();
+
         try {
             MemoStatus status = MemoStatus.valueOf(statusStr.toUpperCase());
             memo.setStatus(status);
             memo.setCurrentStage("Completed"); // Or handle strictly based on status
             memoRepository.save(memo);
+
+            // Audit log with builder pattern
+            auditLogger.log()
+                    .eventType(AuditEventType.STATUS_CHANGE)
+                    .action("Updated memo status")
+                    .module("WORKFLOW")
+                    .entity("MEMO", id.toString())
+                    .businessKey(memo.getMemoNumber())
+                    .remarks("Changed from " + oldStatus + " to " + status)
+                    .success();
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid status: " + statusStr);
         }

@@ -267,9 +267,75 @@ export const clients = {
     rotateSecret: (id) => request(`/admin/clients/${id}/rotate-secret`, { method: 'POST' }),
 };
 
-// Audit Logs
+// Audit Logs (routed via gateway to Audit Service)
 export const auditLogs = {
-    list: (page = 0, size = 50) => request(`/admin/audit-logs?page=${page}&size=${size}`),
+    // Search audit logs with filters
+    search: (filters = {}, page = 0, size = 20) =>
+        request(`/audit/search?page=${page}&size=${size}&sort=timestamp,desc`, {
+            method: 'POST',
+            body: JSON.stringify(filters)
+        }),
+
+    // Get a specific audit log by ID
+    get: (id) => request(`/audit/${id}`),
+
+    // Get audit trail for a specific resource
+    byResource: (resourceType, resourceId, page = 0, size = 20) =>
+        request(`/audit/resource/${resourceType}/${resourceId}?page=${page}&size=${size}`),
+
+    // Get audit trail for a specific actor (user)
+    byActor: (actorId, page = 0, size = 20) =>
+        request(`/audit/actor/${actorId}?page=${page}&size=${size}`),
+
+    // Get all logs for a correlation ID (trace a transaction)
+    byCorrelation: (correlationId) =>
+        request(`/audit/correlation/${correlationId}`),
+
+    // Verify integrity of audit log chain (admin only)
+    verifyIntegrity: (startSequence, endSequence) =>
+        request(`/audit/verify-integrity?startSequence=${startSequence}&endSequence=${endSequence}`),
+};
+
+// API Logs (technical/system logs for debugging and monitoring)
+export const apiLogs = {
+    // Search API logs with filters
+    search: (filters = {}, page = 0, size = 20) =>
+        request(`/audit/api-logs/search?page=${page}&size=${size}&sort=timestamp,desc`, {
+            method: 'POST',
+            body: JSON.stringify(filters)
+        }),
+
+    // Get a specific API log by ID
+    get: (id) => request(`/audit/api-logs/${id}`),
+
+    // Get API logs by correlation ID
+    byCorrelation: (correlationId) =>
+        request(`/audit/api-logs/correlation/${correlationId}`),
+
+    // Get API logs by endpoint
+    byEndpoint: (endpoint, page = 0, size = 20) =>
+        request(`/audit/api-logs/endpoint?endpoint=${encodeURIComponent(endpoint)}&page=${page}&size=${size}`),
+};
+
+// Activity Logs (user timeline and operational logs)
+export const activityLogs = {
+    // Search activity logs with filters
+    search: (filters = {}, page = 0, size = 20) =>
+        request(`/audit/activity-logs/search?page=${page}&size=${size}&sort=timestamp,desc`, {
+            method: 'POST',
+            body: JSON.stringify(filters)
+        }),
+
+    // Get a specific activity log by ID
+    get: (id) => request(`/audit/activity-logs/${id}`),
+
+    // Get activity logs for a specific user
+    byUser: (userId, page = 0, size = 20) =>
+        request(`/audit/activity-logs/user/${userId}?page=${page}&size=${size}`),
+
+    // Get activity logs by entity
+    byEntity: (entityType, entityId, page = 0, size = 20) =>
+        request(`/audit/activity-logs/entity/${entityType}/${entityId}?page=${page}&size=${size}`),
 };
 
 // Policies (routed via gateway to Policy Engine)
