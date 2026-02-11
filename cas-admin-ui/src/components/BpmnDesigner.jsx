@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-js.css';
@@ -48,13 +48,54 @@ const DEFAULT_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-export default function BpmnDesigner({
+/**
+ * Helper to get a human-readable type label and icon from a BPMN element.
+ */
+export function getElementMeta(element) {
+    if (!element) return { type: 'Process', label: 'Process', icon: '📋' };
+    const t = element.type;
+    const bo = element.businessObject;
+
+    const map = {
+        'bpmn:UserTask': { label: 'User Task', icon: '👤' },
+        'bpmn:ServiceTask': { label: 'Service Task', icon: '⚙️' },
+        'bpmn:ScriptTask': { label: 'Script Task', icon: '📜' },
+        'bpmn:SendTask': { label: 'Send Task', icon: '📨' },
+        'bpmn:ReceiveTask': { label: 'Receive Task', icon: '📩' },
+        'bpmn:ManualTask': { label: 'Manual Task', icon: '🤲' },
+        'bpmn:BusinessRuleTask': { label: 'Business Rule Task', icon: '📏' },
+        'bpmn:Task': { label: 'Task', icon: '📄' },
+        'bpmn:SubProcess': { label: 'Sub-Process', icon: '🔲' },
+        'bpmn:ExclusiveGateway': { label: 'Exclusive Gateway', icon: '◇' },
+        'bpmn:InclusiveGateway': { label: 'Inclusive Gateway', icon: '◈' },
+        'bpmn:ParallelGateway': { label: 'Parallel Gateway', icon: '⊞' },
+        'bpmn:EventBasedGateway': { label: 'Event Gateway', icon: '⊡' },
+        'bpmn:ComplexGateway': { label: 'Complex Gateway', icon: '✳️' },
+        'bpmn:StartEvent': { label: 'Start Event', icon: '▶' },
+        'bpmn:EndEvent': { label: 'End Event', icon: '⏹' },
+        'bpmn:IntermediateCatchEvent': { label: 'Intermediate Event', icon: '⏸' },
+        'bpmn:IntermediateThrowEvent': { label: 'Intermediate Event', icon: '⏸' },
+        'bpmn:BoundaryEvent': { label: 'Boundary Event', icon: '⚡' },
+        'bpmn:SequenceFlow': { label: 'Sequence Flow', icon: '→' },
+        'bpmn:DataStoreReference': { label: 'Data Store', icon: '🗄' },
+        'bpmn:DataObjectReference': { label: 'Data Object', icon: '📊' },
+        'bpmn:TextAnnotation': { label: 'Annotation', icon: '💬' },
+        'bpmn:Participant': { label: 'Pool', icon: '🏊' },
+        'bpmn:Lane': { label: 'Lane', icon: '🏊' },
+    };
+
+    return map[t] || { label: t?.replace('bpmn:', '') || 'Element', icon: '📄' };
+}
+
+const BpmnDesigner = forwardRef(function BpmnDesigner({
     initialXml,
     onSave,
     onXmlChange,
+    onElementSelect,
     readOnly = false,
-    height = '600px'
-}) {
+    height = '600px',
+    style
+}, ref) {
     const containerRef = useRef(null);
     const modelerRef = useRef(null);
     const [selectedElement, setSelectedElement] = useState(null);
@@ -62,6 +103,34 @@ export default function BpmnDesigner({
     const [error, setError] = useState(null);
     const [isModelerReady, setIsModelerReady] = useState(false);
     const isImportingRef = useRef(false);
+
+    // Expose modeler methods to parent via ref
+    useImperativeHandle(ref, () => ({
+        getModeler: () => modelerRef.current,
+        getModeling: () => modelerRef.current?.get('modeling'),
+        getElementRegistry: () => modelerRef.current?.get('elementRegistry'),
+        getCanvas: () => modelerRef.current?.get('canvas'),
+        async getXml() {
+            if (!modelerRef.current) return null;
+            try {
+                const { xml } = await modelerRef.current.saveXML({ format: true });
+                return xml;
+            } catch (err) {
+                console.error('Error saving XML:', err);
+                return null;
+            }
+        },
+        async getSvg() {
+            if (!modelerRef.current) return null;
+            try {
+                const { svg } = await modelerRef.current.saveSVG();
+                return svg;
+            } catch (err) {
+                console.error('Error exporting SVG:', err);
+                return null;
+            }
+        }
+    }), [isModelerReady]);
 
     // Initialize modeler
     useEffect(() => {
@@ -78,7 +147,10 @@ export default function BpmnDesigner({
         // Listen for selection changes
         modeler.on('selection.changed', (e) => {
             const element = e.newSelection[0];
-            setSelectedElement(element || null);
+            const selected = element || null;
+            setSelectedElement(selected);
+            // Fire callback to parent
+            onElementSelect?.(selected);
         });
 
         // Listen for changes
@@ -187,7 +259,7 @@ export default function BpmnDesigner({
     };
 
     return (
-        <div className="bpmn-designer" style={{ display: 'flex', flexDirection: 'column', height }}>
+        <div className="bpmn-designer" style={{ display: 'flex', flexDirection: 'column', height, ...style }}>
             {/* Toolbar */}
             <div className="bpmn-toolbar" style={{
                 display: 'flex',
@@ -260,22 +332,8 @@ export default function BpmnDesigner({
                     }}
                 />
             </div>
-
-            {/* Selected Element Info */}
-            {selectedElement && (
-                <div style={{
-                    padding: '8px 12px',
-                    background: 'var(--bg-secondary)',
-                    borderTop: '1px solid var(--border-color)',
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)'
-                }}>
-                    Selected: <strong>{selectedElement.type}</strong>
-                    {selectedElement.businessObject?.name && (
-                        <> — {selectedElement.businessObject.name}</>
-                    )}
-                </div>
-            )}
         </div>
     );
-}
+});
+
+export default BpmnDesigner;

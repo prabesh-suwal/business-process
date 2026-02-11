@@ -1,11 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { processTemplates, formDefinitions } from '../api';
-import BpmnDesigner from '../components/BpmnDesigner';
+import { processTemplates, workflowConfigs } from '../api';
+import BpmnDesigner, { getElementMeta } from '../components/BpmnDesigner';
+import PropertyPanel from '../components/workflow/PropertyPanel';
+import GlobalSettingsPanel from '../components/workflow/GlobalSettingsPanel';
 
 export default function WorkflowDesignerPage() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const designerRef = useRef(null);
+
+    // Template state
     const [template, setTemplate] = useState(null);
     const [bpmnXml, setBpmnXml] = useState('');
     const [loading, setLoading] = useState(true);
@@ -13,8 +18,20 @@ export default function WorkflowDesignerPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [hasChanges, setHasChanges] = useState(false);
-    const [forms, setForms] = useState([]);
 
+    // Panel state
+    const [selectedElement, setSelectedElement] = useState(null);
+    const [panelOpen, setPanelOpen] = useState(false);
+    const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
+
+    // Config state (loaded from backend)
+    const [configId, setConfigId] = useState(null);
+    const [stepConfigs, setStepConfigs] = useState([]);
+    const [gatewayRules, setGatewayRules] = useState([]);
+
+    const isReadOnly = template?.status !== 'DRAFT';
+
+    // Load template
     useEffect(() => {
         loadTemplate();
     }, [id]);
@@ -26,15 +43,16 @@ export default function WorkflowDesignerPage() {
             setTemplate(data);
             setBpmnXml(data.bpmnXml || '');
 
-            // Load available forms for linking
-            if (data.productId) {
+            // Try to load workflow config
+            if (data.code || data.processKey) {
                 try {
-                    const formData = await formDefinitions.list(data.productId, true);
-                    setForms(formData || []);
-                } catch {
-                    // Form service might not be running
-                    setForms([]);
-                }
+                    const cfg = await workflowConfigs.getByCode(data.code || data.processKey);
+                    if (cfg) {
+                        setConfigId(cfg.id);
+                        setStepConfigs(cfg.stepConfigs || []);
+                        setGatewayRules(cfg.gatewayRules || []);
+                    }
+                } catch { /* Config may not exist yet */ }
             }
         } catch (err) {
             setError(err.message);
@@ -43,17 +61,47 @@ export default function WorkflowDesignerPage() {
         }
     };
 
-    const handleXmlChange = (xml) => {
+    // Element selection handler
+    const handleElementSelect = useCallback((element) => {
+        setSelectedElement(element);
+        if (element) {
+            setPanelOpen(true);
+            setGlobalSettingsOpen(false);
+        } else {
+            setPanelOpen(false);
+        }
+    }, []);
+
+    // Close property panel
+    const handleClosePanel = useCallback(() => {
+        setPanelOpen(false);
+        setSelectedElement(null);
+    }, []);
+
+    // Toggle global settings
+    const handleToggleGlobalSettings = useCallback(() => {
+        if (globalSettingsOpen) {
+            setGlobalSettingsOpen(false);
+        } else {
+            setGlobalSettingsOpen(true);
+            setPanelOpen(false);
+            setSelectedElement(null);
+        }
+    }, [globalSettingsOpen]);
+
+    // XML change
+    const handleXmlChange = useCallback((xml) => {
         setBpmnXml(xml);
         setHasChanges(true);
-    };
+    }, []);
 
-    const handleSave = async (xml) => {
+    // Save BPMN
+    const handleSave = useCallback(async (xml) => {
         try {
             setSaving(true);
             setError('');
             await processTemplates.update(id, { bpmnXml: xml || bpmnXml });
-            setSuccess('Workflow saved successfully!');
+            setSuccess('Workflow saved!');
             setHasChanges(false);
             setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
@@ -61,201 +109,209 @@ export default function WorkflowDesignerPage() {
         } finally {
             setSaving(false);
         }
-    };
+    }, [id, bpmnXml]);
 
-    const handleDeploy = async () => {
-        if (hasChanges) {
-            setError('Please save changes before deploying');
-            return;
-        }
-        if (!confirm('Deploy this workflow? Once deployed, it becomes active and cannot be edited.')) {
-            return;
-        }
+    // Deploy
+    const handleDeploy = useCallback(async () => {
+        if (hasChanges) { setError('Save changes before deploying'); return; }
+        if (!confirm('Deploy this workflow? It becomes active and cannot be edited.')) return;
         try {
             setSaving(true);
             await processTemplates.deploy(id);
-            setSuccess('Workflow deployed successfully!');
+            setSuccess('Workflow deployed!');
             loadTemplate();
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setSaving(false);
-        }
-    };
+        } catch (err) { setError(err.message); }
+        finally { setSaving(false); }
+    }, [id, hasChanges]);
 
-    const handleCreateNewVersion = async () => {
-        if (!confirm('Create a new draft version based on this workflow?')) {
-            return;
-        }
+    // New version
+    const handleCreateNewVersion = useCallback(async () => {
+        if (!confirm('Create a new draft version based on this workflow?')) return;
         try {
             setSaving(true);
-            setError('');
             const newVersion = await processTemplates.createNewVersion(id);
-            setSuccess(`New version ${newVersion.version} created!`);
-            // Navigate to the new version for editing
+            setSuccess(`Version ${newVersion.version} created!`);
             navigate(`/workflows/${newVersion.id}/design`);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setSaving(false);
-        }
-    };
+        } catch (err) { setError(err.message); }
+        finally { setSaving(false); }
+    }, [id, navigate]);
 
-    const isReadOnly = template?.status !== 'DRAFT';
+    // Config change handler (from property panel tabs)
+    const handleConfigChange = useCallback(async (type, key, data) => {
+        if (type === 'step') {
+            setStepConfigs(prev => {
+                const idx = prev.findIndex(s => s.taskKey === key);
+                if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = { ...updated[idx], ...data };
+                    return updated;
+                }
+                return [...prev, { taskKey: key, ...data }];
+            });
+        } else if (type === 'gateway') {
+            setGatewayRules(prev => {
+                const idx = prev.findIndex(g => g.gatewayKey === key);
+                if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = { ...updated[idx], ...data };
+                    return updated;
+                }
+                return [...prev, { gatewayKey: key, ...data }];
+            });
+        }
+    }, []);
+
+    const showPanel = panelOpen && selectedElement;
+    const showAnyPanel = showPanel || globalSettingsOpen;
+
+    // Keyboard shortcut: Ctrl+S to save
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (!isReadOnly && hasChanges) handleSave();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isReadOnly, hasChanges, handleSave]);
 
     if (loading) {
         return (
             <div className="page-container">
-                <div style={{ textAlign: 'center', padding: '48px' }}>Loading...</div>
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    height: '60vh', color: 'var(--color-gray-400)', fontSize: 'var(--font-size-lg)'
+                }}>
+                    Loading designer...
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="page-container" style={{ maxWidth: 'none' }}>
-            {/* Header */}
-            <div className="page-header" style={{ marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <button
-                        className="btn btn-secondary"
-                        onClick={() => navigate('/workflows')}
-                    >
+        <div className="page-container" style={{ maxWidth: 'none', padding: 0 }}>
+            {/* Compact Toolbar */}
+            <div className="designer-toolbar">
+                <div className="designer-toolbar__left">
+                    <button className="btn btn-secondary btn-sm" onClick={() => navigate('/workflows')}
+                        title="Back to workflows">
                         ← Back
                     </button>
-                    <div>
-                        <h1 style={{ margin: 0 }}>{template?.name}</h1>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                            Version {template?.version} •
-                            <span style={{
-                                marginLeft: '8px',
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                background: template?.status === 'ACTIVE' ? 'var(--success)' :
-                                    template?.status === 'DRAFT' ? 'var(--warning)' : 'var(--text-secondary)',
-                                color: template?.status === 'DRAFT' ? '#000' : '#fff',
-                                fontSize: '12px'
-                            }}>
+                    <div className="designer-toolbar__title">
+                        <span className="designer-toolbar__name">{template?.name}</span>
+                        <span className="designer-toolbar__meta">
+                            v{template?.version}
+                            <span className={`status-badge status-badge--${(template?.status || 'draft').toLowerCase()}`}>
                                 {template?.status}
                             </span>
-                        </div>
+                            {hasChanges && !isReadOnly && (
+                                <span className="dirty-indicator" title="Unsaved changes" />
+                            )}
+                        </span>
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
+
+                <div className="designer-toolbar__right">
+                    <button className="btn btn-ghost btn-sm" onClick={handleToggleGlobalSettings}
+                        title="Global Settings" style={{
+                            background: globalSettingsOpen ? 'var(--color-primary-50)' : undefined,
+                            color: globalSettingsOpen ? 'var(--color-primary-600)' : undefined
+                        }}>
+                        ⚙️ Settings
+                    </button>
+
                     {!isReadOnly && (
                         <>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => handleSave()}
-                                disabled={saving || !hasChanges}
-                            >
-                                {saving ? 'Saving...' : '💾 Save'}
+                            <button className="btn btn-secondary btn-sm" onClick={() => handleSave()}
+                                disabled={saving || !hasChanges}>
+                                {saving ? '...' : '💾 Save'}
                             </button>
-                            <button
-                                className="btn btn-success"
-                                onClick={handleDeploy}
+                            <button className="btn btn-success btn-sm" onClick={handleDeploy}
                                 disabled={saving || hasChanges}
-                                title={hasChanges ? 'Save changes before deploying' : 'Deploy workflow'}
-                            >
+                                title={hasChanges ? 'Save changes first' : 'Deploy workflow'}>
                                 🚀 Deploy
                             </button>
                         </>
                     )}
                     {isReadOnly && (
-                        <button
-                            className="btn btn-primary"
-                            onClick={handleCreateNewVersion}
-                            disabled={saving}
-                            title="Create a new draft version based on this workflow"
-                        >
-                            {saving ? 'Creating...' : '📝 Create New Version'}
+                        <button className="btn btn-primary btn-sm" onClick={handleCreateNewVersion}
+                            disabled={saving}>
+                            {saving ? '...' : '📝 New Version'}
                         </button>
                     )}
                 </div>
             </div>
 
-            {error && <div className="alert alert-danger">{error}</div>}
-            {success && <div className="alert alert-success">{success}</div>}
-            {hasChanges && !isReadOnly && (
-                <div className="alert" style={{ background: 'var(--warning)', color: '#000', marginBottom: '16px' }}>
-                    ⚠️ You have unsaved changes
+            {/* Alerts */}
+            {error && (
+                <div className="alert alert-danger" style={{ margin: '0 var(--space-4)', borderRadius: 0 }}>
+                    {error}
+                    <button onClick={() => setError('')} style={{
+                        float: 'right', background: 'none',
+                        border: 'none', cursor: 'pointer', fontSize: '16px'
+                    }}>×</button>
+                </div>
+            )}
+            {success && (
+                <div className="alert alert-success" style={{ margin: '0 var(--space-4)', borderRadius: 0 }}>
+                    {success}
                 </div>
             )}
 
-            {/* Designer */}
-            <div style={{ display: 'flex', gap: '16px' }}>
-                {/* Main Canvas */}
-                <div style={{ flex: 1 }}>
+            {/* Main Designer Layout */}
+            <div className="designer-layout">
+                {/* Canvas Area */}
+                <div className="designer-canvas" style={{
+                    marginRight: showAnyPanel ? '0' : undefined,
+                    transition: 'margin 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+                }}>
                     <BpmnDesigner
+                        ref={designerRef}
                         initialXml={bpmnXml}
                         onXmlChange={isReadOnly ? undefined : handleXmlChange}
                         onSave={isReadOnly ? undefined : handleSave}
+                        onElementSelect={handleElementSelect}
                         readOnly={isReadOnly}
-                        height="calc(100vh - 200px)"
+                        height="100%"
+                        style={{ width: '100%', height: '100%' }}
                     />
+
+                    {/* Selection hint when no panel is open */}
+                    {!showAnyPanel && !selectedElement && (
+                        <div className="designer-hint">
+                            Click an element to view its properties
+                        </div>
+                    )}
                 </div>
 
-                {/* Side Panel */}
-                <div style={{ width: '300px', flexShrink: 0 }}>
-                    <div className="card" style={{ marginBottom: '16px' }}>
-                        <h3 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>📋 Properties</h3>
-                        <div className="form-group">
-                            <label>Name</label>
-                            <input
-                                type="text"
-                                className="form-control"
-                                value={template?.name || ''}
-                                disabled
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>Description</label>
-                            <textarea
-                                className="form-control"
-                                rows={3}
-                                value={template?.description || ''}
-                                disabled
-                            />
-                        </div>
-                    </div>
+                {/* Property Panel - slides in from right */}
+                {showPanel && (
+                    <PropertyPanel
+                        element={selectedElement}
+                        modelerRef={designerRef}
+                        topicId={template?.topicId}
+                        stepConfigs={stepConfigs}
+                        gatewayRules={gatewayRules}
+                        onConfigChange={handleConfigChange}
+                        onClose={handleClosePanel}
+                    />
+                )}
 
-                    <div className="card" style={{ marginBottom: '16px' }}>
-                        <h3 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>📝 Available Forms</h3>
-                        {forms.length === 0 ? (
-                            <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                                No forms available. Create forms in the Forms section.
-                            </div>
-                        ) : (
-                            <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                                {forms.map(form => (
-                                    <li key={form.id} style={{
-                                        padding: '8px',
-                                        background: 'var(--bg-tertiary)',
-                                        borderRadius: '4px',
-                                        marginBottom: '8px',
-                                        fontSize: '14px'
-                                    }}>
-                                        <strong>{form.name}</strong>
-                                        <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                                            {Object.keys(form.schema?.properties || {}).length} fields
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-
-                    <div className="card">
-                        <h3 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>ℹ️ Instructions</h3>
-                        <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                            <li>Drag elements from the palette on the left</li>
-                            <li>Connect tasks with sequence flows</li>
-                            <li>Use User Tasks for human activities</li>
-                            <li>Use Service Tasks for automated actions</li>
-                            <li>Add Gateways for branching logic</li>
-                            <li>Save and Deploy when ready</li>
-                        </ol>
-                    </div>
-                </div>
+                {/* Global Settings Panel */}
+                {globalSettingsOpen && (
+                    <GlobalSettingsPanel
+                        topicId={template?.topicId}
+                        templateId={id}
+                        configId={configId}
+                        onClose={() => setGlobalSettingsOpen(false)}
+                        onSaved={() => {
+                            setSuccess('Settings saved!');
+                            setTimeout(() => setSuccess(''), 3000);
+                            loadTemplate();
+                        }}
+                    />
+                )}
             </div>
         </div>
     );

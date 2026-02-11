@@ -104,6 +104,7 @@ public class ProcessDesignService {
                 // Deploy to Flowable
                 Deployment deployment = repositoryService.createDeployment()
                                 .name(template.getName() + " v" + template.getVersion())
+                                .disableSchemaValidation()
                                 .addInputStream(
                                                 processDefKey + ".bpmn20.xml",
                                                 new ByteArrayInputStream(
@@ -151,6 +152,7 @@ public class ProcessDesignService {
                 // Deploy to Flowable
                 Deployment deployment = repositoryService.createDeployment()
                                 .name(processName != null ? processName : normalizedKey)
+                                .disableSchemaValidation()
                                 .addInputStream(
                                                 normalizedKey + ".bpmn20.xml",
                                                 new ByteArrayInputStream(bpmnXml.getBytes(StandardCharsets.UTF_8)))

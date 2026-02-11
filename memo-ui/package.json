@@ -31,6 +31,7 @@
         "axios": "^1.13.2",
         "bpmn-js": "^18.10.1",
         "bpmn-js-properties-panel": "^5.47.0",
+        "bpmn-js-token-simulation": "^0.39.1",
         "camunda-bpmn-moddle": "^7.0.1",
         "class-variance-authority": "^0.7.0",
         "clsx": "^2.1.1",

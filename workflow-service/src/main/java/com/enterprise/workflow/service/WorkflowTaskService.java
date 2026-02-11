@@ -273,12 +273,15 @@ public class WorkflowTaskService {
             taskService.addComment(taskId, task.getProcessInstanceId(), request.getComment());
         }
 
-        // Complete the task with variables
+        // Build variables map — always include 'outcome' derived from approved flag
+        // so BPMN gateways using ${outcome == 'approved'} / ${outcome == 'rejected'}
+        // work
+        Map<String, Object> variables = new java.util.HashMap<>();
+        variables.put("outcome", request.isApproved() ? "approved" : "rejected");
         if (request.getVariables() != null && !request.getVariables().isEmpty()) {
-            taskService.complete(taskId, request.getVariables());
-        } else {
-            taskService.complete(taskId);
+            variables.putAll(request.getVariables());
         }
+        taskService.complete(taskId, variables);
 
         // Record in timeline
         ActionTimeline timelineEvent = ActionTimeline.builder()

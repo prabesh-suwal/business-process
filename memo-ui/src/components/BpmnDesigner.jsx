@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
+import TokenSimulationModule from 'bpmn-js-token-simulation';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
+import 'bpmn-js-token-simulation/assets/css/bpmn-js-token-simulation.css';
 
 const DEFAULT_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
@@ -49,14 +51,14 @@ const DEFAULT_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-export default function BpmnDesigner({
+const BpmnDesigner = forwardRef(function BpmnDesigner({
     initialXml,
     onSave,
     onXmlChange,
     onElementClick,
     readOnly = false,
     height = '600px'
-}) {
+}, ref) {
     const containerRef = useRef(null);
     const modelerRef = useRef(null);
     const [selectedElement, setSelectedElement] = useState(null);
@@ -75,7 +77,10 @@ export default function BpmnDesigner({
 
         const modeler = new BpmnModeler({
             container: containerRef.current,
-            keyboard: { bindTo: document }
+            keyboard: { bindTo: document },
+            additionalModules: [
+                TokenSimulationModule
+            ]
         });
 
         modelerRef.current = modeler;
@@ -108,6 +113,27 @@ export default function BpmnDesigner({
             modeler.destroy();
         };
     }, []);
+
+    // Expose modeler internals to parent via ref
+    useImperativeHandle(ref, () => ({
+        getModeler: () => modelerRef.current,
+        getModeling: () => modelerRef.current?.get('modeling'),
+        getModdle: () => modelerRef.current?.get('moddle'),
+        getElementRegistry: () => modelerRef.current?.get('elementRegistry'),
+        getCanvas: () => modelerRef.current?.get('canvas'),
+        importXML: async (xml) => {
+            if (!modelerRef.current) throw new Error('Modeler not ready');
+            isImportingRef.current = true;
+            try {
+                await modelerRef.current.importXML(xml);
+                const canvas = modelerRef.current.get('canvas');
+                canvas.zoom('fit-viewport');
+                extractAssignmentConfigs();
+            } finally {
+                isImportingRef.current = false;
+            }
+        },
+    }), []);
 
     // Load diagram when modeler is ready or initialXml changes
     useEffect(() => {
@@ -393,4 +419,6 @@ export default function BpmnDesigner({
             </div>
         </div>
     );
-}
+});
+
+export default BpmnDesigner;

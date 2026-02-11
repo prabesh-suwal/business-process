@@ -1,0 +1,471 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_LoanProcessing"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="memo-ui"
+                  exporterVersion="1.0">
+
+  <bpmn:process id="loan_processing" name="Loan Processing Workflow" isExecutable="true">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         START EVENT
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:startEvent id="start" name="Loan Application Received">
+      <bpmn:outgoing>flow_start_to_initial_review</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         STEP 1: Initial Review
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:userTask id="initial_review" name="Initial Review by Officer">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"LOAN_OFFICER","scope":"INITIATOR_BRANCH","sla":"P1D","escalation":"NOTIFY"}</bpmn:documentation>
+      <bpmn:incoming>flow_start_to_initial_review</bpmn:incoming>
+      <bpmn:outgoing>flow_initial_review_to_eligibility</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         EXCLUSIVE GATEWAY: Is the applicant eligible?
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:exclusiveGateway id="gw_eligibility" name="Eligible?">
+      <bpmn:incoming>flow_initial_review_to_eligibility</bpmn:incoming>
+      <bpmn:outgoing>flow_eligible_yes</bpmn:outgoing>
+      <bpmn:outgoing>flow_eligible_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         REJECTED PATH
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:userTask id="reject_loan" name="Reject Loan &amp; Notify Applicant">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"LOAN_OFFICER","scope":"INITIATOR_BRANCH","sla":"PT4H","escalation":"NOTIFY"}</bpmn:documentation>
+      <bpmn:incoming>flow_eligible_no</bpmn:incoming>
+      <bpmn:outgoing>flow_reject_to_end_rejected</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="end_rejected" name="Loan Rejected">
+      <bpmn:incoming>flow_reject_to_end_rejected</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         PARALLEL GATEWAY: Fork — Credit Check + Background Check
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:parallelGateway id="gw_parallel_fork" name="Start Parallel Checks">
+      <bpmn:incoming>flow_eligible_yes</bpmn:incoming>
+      <bpmn:outgoing>flow_fork_to_credit</bpmn:outgoing>
+      <bpmn:outgoing>flow_fork_to_background</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- STEP 2A: Credit Check -->
+    <bpmn:userTask id="credit_check" name="Perform Credit Check">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"CREDIT_ANALYST","scope":"HEAD_OFFICE","sla":"P2D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_fork_to_credit</bpmn:incoming>
+      <bpmn:outgoing>flow_credit_to_join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- STEP 2B: Background Check -->
+    <bpmn:userTask id="background_check" name="Perform Background Check">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"COMPLIANCE_OFFICER","scope":"HEAD_OFFICE","sla":"P3D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_fork_to_background</bpmn:incoming>
+      <bpmn:outgoing>flow_background_to_join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- PARALLEL GATEWAY: Join -->
+    <bpmn:parallelGateway id="gw_parallel_join" name="Both Checks Complete">
+      <bpmn:incoming>flow_credit_to_join</bpmn:incoming>
+      <bpmn:incoming>flow_background_to_join</bpmn:incoming>
+      <bpmn:outgoing>flow_join_to_inclusive_fork</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         INCLUSIVE GATEWAY: Fork — Risk Assessment + Legal Review
+         At least one path must be taken; conditions determine which.
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:inclusiveGateway id="gw_inclusive_fork" name="Review Required?" default="flow_inclusive_to_risk">
+      <bpmn:incoming>flow_join_to_inclusive_fork</bpmn:incoming>
+      <bpmn:outgoing>flow_inclusive_to_risk</bpmn:outgoing>
+      <bpmn:outgoing>flow_inclusive_to_legal</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+
+    <!-- STEP 3A: Risk Assessment -->
+    <bpmn:userTask id="risk_assessment" name="Risk Assessment">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"RISK_ANALYST","scope":"HEAD_OFFICE","sla":"P2D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_inclusive_to_risk</bpmn:incoming>
+      <bpmn:outgoing>flow_risk_to_inclusive_join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- STEP 3B: Legal Review (only for large loans) -->
+    <bpmn:userTask id="legal_review" name="Legal Review">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"LEGAL_OFFICER","scope":"HEAD_OFFICE","sla":"P3D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_inclusive_to_legal</bpmn:incoming>
+      <bpmn:outgoing>flow_legal_to_inclusive_join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- INCLUSIVE GATEWAY: Join -->
+    <bpmn:inclusiveGateway id="gw_inclusive_join" name="Reviews Complete">
+      <bpmn:incoming>flow_risk_to_inclusive_join</bpmn:incoming>
+      <bpmn:incoming>flow_legal_to_inclusive_join</bpmn:incoming>
+      <bpmn:outgoing>flow_inclusive_join_to_approval</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         STEP 4: Multi-Level Approval (Committee)
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:userTask id="multi_level_approval" name="Multi-Level Approval">
+      <bpmn:documentation>{"assignmentType":"COMMITTEE","groupCode":"LOAN_APPROVAL_COMMITTEE","votingThreshold":"MAJORITY","scope":"HEAD_OFFICE","sla":"P3D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_inclusive_join_to_approval</bpmn:incoming>
+      <bpmn:outgoing>flow_approval_to_gw_decision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         EXCLUSIVE GATEWAY: Approval Decision
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:exclusiveGateway id="gw_approval_decision" name="Approved?" default="flow_decision_rejected">
+      <bpmn:incoming>flow_approval_to_gw_decision</bpmn:incoming>
+      <bpmn:outgoing>flow_decision_approved</bpmn:outgoing>
+      <bpmn:outgoing>flow_decision_rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- Rejection path loops back to notify -->
+    <bpmn:userTask id="notify_rejection" name="Notify Applicant of Rejection">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"LOAN_OFFICER","scope":"INITIATOR_BRANCH","sla":"PT4H","escalation":"NOTIFY"}</bpmn:documentation>
+      <bpmn:incoming>flow_decision_rejected</bpmn:incoming>
+      <bpmn:outgoing>flow_notify_rejection_to_end</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="end_approval_rejected" name="Loan Rejected (After Review)">
+      <bpmn:incoming>flow_notify_rejection_to_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         STEP 5: Collect Documents (replaces Timer/Signal events)
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:userTask id="collect_documents" name="Collect Required Documents">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"LOAN_OFFICER","scope":"INITIATOR_BRANCH","sla":"P3D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_decision_approved</bpmn:incoming>
+      <bpmn:outgoing>flow_collect_to_disburse</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         STEP 6: Disburse Loan
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:userTask id="disburse_loan" name="Disburse Loan">
+      <bpmn:documentation>{"assignmentType":"ROLE","roleCode":"TREASURY_OFFICER","scope":"HEAD_OFFICE","sla":"P1D","escalation":"ESCALATE_TO_MANAGER"}</bpmn:documentation>
+      <bpmn:incoming>flow_collect_to_disburse</bpmn:incoming>
+      <bpmn:outgoing>flow_disburse_to_end_approved</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         END EVENT: Approved
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:endEvent id="end_approved" name="Loan Approved &amp; Disbursed">
+      <bpmn:incoming>flow_disburse_to_end_approved</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         SEQUENCE FLOWS
+         ════════════════════════════════════════════════════════════════ -->
+    <bpmn:sequenceFlow id="flow_start_to_initial_review" sourceRef="start" targetRef="initial_review" />
+    <bpmn:sequenceFlow id="flow_initial_review_to_eligibility" sourceRef="initial_review" targetRef="gw_eligibility" />
+
+    <!-- Eligible? YES — condition: outcome == 'approved' -->
+    <bpmn:sequenceFlow id="flow_eligible_yes" name="Eligible" sourceRef="gw_eligibility" targetRef="gw_parallel_fork">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${outcome == 'approved'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- Eligible? NO — default path -->
+    <bpmn:sequenceFlow id="flow_eligible_no" name="Not Eligible" sourceRef="gw_eligibility" targetRef="reject_loan" />
+
+    <bpmn:sequenceFlow id="flow_reject_to_end_rejected" sourceRef="reject_loan" targetRef="end_rejected" />
+
+    <!-- Parallel fork flows -->
+    <bpmn:sequenceFlow id="flow_fork_to_credit" sourceRef="gw_parallel_fork" targetRef="credit_check" />
+    <bpmn:sequenceFlow id="flow_fork_to_background" sourceRef="gw_parallel_fork" targetRef="background_check" />
+
+    <!-- Parallel join flows -->
+    <bpmn:sequenceFlow id="flow_credit_to_join" sourceRef="credit_check" targetRef="gw_parallel_join" />
+    <bpmn:sequenceFlow id="flow_background_to_join" sourceRef="background_check" targetRef="gw_parallel_join" />
+
+    <!-- After parallel join → inclusive fork -->
+    <bpmn:sequenceFlow id="flow_join_to_inclusive_fork" sourceRef="gw_parallel_join" targetRef="gw_inclusive_fork" />
+
+    <!-- Inclusive fork flows -->
+    <!-- Risk Assessment: always taken (default) -->
+    <bpmn:sequenceFlow id="flow_inclusive_to_risk" name="Risk Review" sourceRef="gw_inclusive_fork" targetRef="risk_assessment" />
+
+    <!-- Legal Review: only for large loans -->
+    <bpmn:sequenceFlow id="flow_inclusive_to_legal" name="Legal Required (Large Loan)" sourceRef="gw_inclusive_fork" targetRef="legal_review">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${loanAmount > 1000000}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- Inclusive join flows -->
+    <bpmn:sequenceFlow id="flow_risk_to_inclusive_join" sourceRef="risk_assessment" targetRef="gw_inclusive_join" />
+    <bpmn:sequenceFlow id="flow_legal_to_inclusive_join" sourceRef="legal_review" targetRef="gw_inclusive_join" />
+
+    <!-- After reviews → multi-level approval -->
+    <bpmn:sequenceFlow id="flow_inclusive_join_to_approval" sourceRef="gw_inclusive_join" targetRef="multi_level_approval" />
+
+    <!-- After approval → decision gateway -->
+    <bpmn:sequenceFlow id="flow_approval_to_gw_decision" sourceRef="multi_level_approval" targetRef="gw_approval_decision" />
+
+    <!-- Approved? YES -->
+    <bpmn:sequenceFlow id="flow_decision_approved" name="Approved" sourceRef="gw_approval_decision" targetRef="collect_documents">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${committeeDecision == 'APPROVED'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <!-- Approved? NO — default -->
+    <bpmn:sequenceFlow id="flow_decision_rejected" name="Rejected" sourceRef="gw_approval_decision" targetRef="notify_rejection" />
+
+    <bpmn:sequenceFlow id="flow_notify_rejection_to_end" sourceRef="notify_rejection" targetRef="end_approval_rejected" />
+
+    <!-- Collect docs → Disburse -->
+    <bpmn:sequenceFlow id="flow_collect_to_disburse" sourceRef="collect_documents" targetRef="disburse_loan" />
+
+    <!-- Disburse → end -->
+    <bpmn:sequenceFlow id="flow_disburse_to_end_approved" sourceRef="disburse_loan" targetRef="end_approved" />
+
+  </bpmn:process>
+
+  <!-- ════════════════════════════════════════════════════════════════════════
+       BPMN DIAGRAM — Visual Layout
+       ════════════════════════════════════════════════════════════════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="loan_processing">
+
+      <!-- Start Event -->
+      <bpmndi:BPMNShape id="shape_start" bpmnElement="start">
+        <dc:Bounds x="180" y="312" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="152" y="355" width="92" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Initial Review -->
+      <bpmndi:BPMNShape id="shape_initial_review" bpmnElement="initial_review">
+        <dc:Bounds x="280" y="290" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Eligibility Gateway -->
+      <bpmndi:BPMNShape id="shape_gw_eligibility" bpmnElement="gw_eligibility" isMarkerVisible="true">
+        <dc:Bounds x="445" y="305" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="452" y="275" width="36" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Reject Loan -->
+      <bpmndi:BPMNShape id="shape_reject_loan" bpmnElement="reject_loan">
+        <dc:Bounds x="420" y="460" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- End Rejected -->
+      <bpmndi:BPMNShape id="shape_end_rejected" bpmnElement="end_rejected">
+        <dc:Bounds x="452" y="592" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="435" y="635" width="70" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Parallel Fork -->
+      <bpmndi:BPMNShape id="shape_gw_parallel_fork" bpmnElement="gw_parallel_fork">
+        <dc:Bounds x="565" y="305" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="544" y="275" width="92" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Credit Check -->
+      <bpmndi:BPMNShape id="shape_credit_check" bpmnElement="credit_check">
+        <dc:Bounds x="680" y="220" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Background Check -->
+      <bpmndi:BPMNShape id="shape_background_check" bpmnElement="background_check">
+        <dc:Bounds x="680" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Parallel Join -->
+      <bpmndi:BPMNShape id="shape_gw_parallel_join" bpmnElement="gw_parallel_join">
+        <dc:Bounds x="845" y="305" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="822" y="362" width="96" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Inclusive Fork -->
+      <bpmndi:BPMNShape id="shape_gw_inclusive_fork" bpmnElement="gw_inclusive_fork">
+        <dc:Bounds x="965" y="305" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="944" y="275" width="92" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Risk Assessment -->
+      <bpmndi:BPMNShape id="shape_risk_assessment" bpmnElement="risk_assessment">
+        <dc:Bounds x="1080" y="220" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Legal Review -->
+      <bpmndi:BPMNShape id="shape_legal_review" bpmnElement="legal_review">
+        <dc:Bounds x="1080" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Inclusive Join -->
+      <bpmndi:BPMNShape id="shape_gw_inclusive_join" bpmnElement="gw_inclusive_join">
+        <dc:Bounds x="1245" y="305" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1224" y="362" width="92" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Multi-Level Approval -->
+      <bpmndi:BPMNShape id="shape_multi_level_approval" bpmnElement="multi_level_approval">
+        <dc:Bounds x="1370" y="290" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Approval Decision Gateway -->
+      <bpmndi:BPMNShape id="shape_gw_approval_decision" bpmnElement="gw_approval_decision" isMarkerVisible="true">
+        <dc:Bounds x="1535" y="305" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1540" y="275" width="40" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Notify Rejection -->
+      <bpmndi:BPMNShape id="shape_notify_rejection" bpmnElement="notify_rejection">
+        <dc:Bounds x="1510" y="460" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- End Approval Rejected -->
+      <bpmndi:BPMNShape id="shape_end_approval_rejected" bpmnElement="end_approval_rejected">
+        <dc:Bounds x="1542" y="592" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1505" y="635" width="110" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- Collect Documents -->
+      <bpmndi:BPMNShape id="shape_collect_documents" bpmnElement="collect_documents">
+        <dc:Bounds x="1660" y="290" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Disburse Loan -->
+      <bpmndi:BPMNShape id="shape_disburse_loan" bpmnElement="disburse_loan">
+        <dc:Bounds x="1830" y="290" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- End Approved -->
+      <bpmndi:BPMNShape id="shape_end_approved" bpmnElement="end_approved">
+        <dc:Bounds x="2002" y="312" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1968" y="355" width="104" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- ══════════ EDGES ══════════ -->
+
+      <bpmndi:BPMNEdge id="edge_start_to_initial_review" bpmnElement="flow_start_to_initial_review">
+        <di:waypoint x="216" y="330" />
+        <di:waypoint x="280" y="330" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_initial_review_to_eligibility" bpmnElement="flow_initial_review_to_eligibility">
+        <di:waypoint x="380" y="330" />
+        <di:waypoint x="445" y="330" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_eligible_yes" bpmnElement="flow_eligible_yes">
+        <di:waypoint x="495" y="330" />
+        <di:waypoint x="565" y="330" />
+        <bpmndi:BPMNLabel><dc:Bounds x="516" y="312" width="40" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_eligible_no" bpmnElement="flow_eligible_no">
+        <di:waypoint x="470" y="355" />
+        <di:waypoint x="470" y="460" />
+        <bpmndi:BPMNLabel><dc:Bounds x="478" y="400" width="56" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_reject_to_end_rejected" bpmnElement="flow_reject_to_end_rejected">
+        <di:waypoint x="470" y="540" />
+        <di:waypoint x="470" y="592" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_fork_to_credit" bpmnElement="flow_fork_to_credit">
+        <di:waypoint x="590" y="305" />
+        <di:waypoint x="590" y="260" />
+        <di:waypoint x="680" y="260" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_fork_to_background" bpmnElement="flow_fork_to_background">
+        <di:waypoint x="590" y="355" />
+        <di:waypoint x="590" y="420" />
+        <di:waypoint x="680" y="420" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_credit_to_join" bpmnElement="flow_credit_to_join">
+        <di:waypoint x="780" y="260" />
+        <di:waypoint x="870" y="260" />
+        <di:waypoint x="870" y="305" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_background_to_join" bpmnElement="flow_background_to_join">
+        <di:waypoint x="780" y="420" />
+        <di:waypoint x="870" y="420" />
+        <di:waypoint x="870" y="355" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_join_to_inclusive_fork" bpmnElement="flow_join_to_inclusive_fork">
+        <di:waypoint x="895" y="330" />
+        <di:waypoint x="965" y="330" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_inclusive_to_risk" bpmnElement="flow_inclusive_to_risk">
+        <di:waypoint x="990" y="305" />
+        <di:waypoint x="990" y="260" />
+        <di:waypoint x="1080" y="260" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1005" y="242" width="60" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_inclusive_to_legal" bpmnElement="flow_inclusive_to_legal">
+        <di:waypoint x="990" y="355" />
+        <di:waypoint x="990" y="420" />
+        <di:waypoint x="1080" y="420" />
+        <bpmndi:BPMNLabel><dc:Bounds x="998" y="430" width="80" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_risk_to_inclusive_join" bpmnElement="flow_risk_to_inclusive_join">
+        <di:waypoint x="1180" y="260" />
+        <di:waypoint x="1270" y="260" />
+        <di:waypoint x="1270" y="305" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_legal_to_inclusive_join" bpmnElement="flow_legal_to_inclusive_join">
+        <di:waypoint x="1180" y="420" />
+        <di:waypoint x="1270" y="420" />
+        <di:waypoint x="1270" y="355" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_inclusive_join_to_approval" bpmnElement="flow_inclusive_join_to_approval">
+        <di:waypoint x="1295" y="330" />
+        <di:waypoint x="1370" y="330" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_approval_to_gw_decision" bpmnElement="flow_approval_to_gw_decision">
+        <di:waypoint x="1470" y="330" />
+        <di:waypoint x="1535" y="330" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_decision_approved" bpmnElement="flow_decision_approved">
+        <di:waypoint x="1585" y="330" />
+        <di:waypoint x="1660" y="330" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1600" y="312" width="48" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_decision_rejected" bpmnElement="flow_decision_rejected">
+        <di:waypoint x="1560" y="355" />
+        <di:waypoint x="1560" y="460" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1568" y="400" width="44" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_notify_rejection_to_end" bpmnElement="flow_notify_rejection_to_end">
+        <di:waypoint x="1560" y="540" />
+        <di:waypoint x="1560" y="592" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_collect_to_disburse" bpmnElement="flow_collect_to_disburse">
+        <di:waypoint x="1760" y="330" />
+        <di:waypoint x="1830" y="330" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="edge_disburse_to_end_approved" bpmnElement="flow_disburse_to_end_approved">
+        <di:waypoint x="1930" y="330" />
+        <di:waypoint x="2002" y="330" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
