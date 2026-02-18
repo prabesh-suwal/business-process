@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { X, Info, Users, GitBranch, Zap, Settings2, ArrowRight } from 'lucide-react';
+import { X, Info, Users, GitBranch, Zap, Settings2, ArrowRight, Target, Table2 } from 'lucide-react';
 import GeneralTab from './GeneralTab';
 import ConditionsTab from './ConditionsTab';
 import AdvancedTab from './AdvancedTab';
+import OutcomesTab from './OutcomesTab';
+import BusinessRuleTaskTab from './BusinessRuleTaskTab';
 import AdvancedAssignmentTab from '../AdvancedAssignmentTab';
 import ConditionBuilder from '../ConditionBuilder';
 
@@ -24,6 +26,7 @@ function getTabsForElement(type) {
             return [
                 { id: 'general', label: 'General', icon: Info },
                 { id: 'assignment', label: 'Assignment', icon: Users },
+                { id: 'outcomes', label: 'Outcomes', icon: Target },
                 { id: 'conditions', label: 'Branching', icon: GitBranch },
                 { id: 'advanced', label: 'Advanced', icon: Settings2 },
             ];
@@ -42,6 +45,11 @@ function getTabsForElement(type) {
             return [
                 { id: 'general', label: 'General', icon: Info },
                 { id: 'conditions', label: 'Conditions', icon: GitBranch },
+            ];
+        case 'bpmn:BusinessRuleTask':
+            return [
+                { id: 'general', label: 'General', icon: Info },
+                { id: 'decision', label: 'Decision Table', icon: Table2 },
             ];
         default:
             return [
@@ -63,6 +71,8 @@ function getElementMeta(type) {
             return { icon: Zap, color: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/20', label: 'Inclusive Gateway' };
         case 'bpmn:SequenceFlow':
             return { icon: ArrowRight, color: 'from-slate-500 to-slate-700', shadow: 'shadow-slate-500/20', label: 'Sequence Flow' };
+        case 'bpmn:BusinessRuleTask':
+            return { icon: Table2, color: 'from-indigo-500 to-purple-600', shadow: 'shadow-indigo-500/20', label: 'Business Rule Task' };
         default:
             return { icon: Info, color: 'from-slate-400 to-slate-600', shadow: 'shadow-slate-400/20', label: type?.replace('bpmn:', '') || 'Element' };
     }
@@ -156,8 +166,8 @@ export default function PropertyPanel({
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id)}
                                     className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all ${isActive
-                                            ? 'bg-white text-slate-900 shadow-sm'
-                                            : 'text-slate-500 hover:text-slate-700'
+                                        ? 'bg-white text-slate-900 shadow-sm'
+                                        : 'text-slate-500 hover:text-slate-700'
                                         }`}
                                 >
                                     <tab.icon className="w-3 h-3" />
@@ -192,6 +202,13 @@ export default function PropertyPanel({
                             console.log('Preview not implemented yet', rules);
                             return [];
                         }}
+                    />
+                )}
+
+                {validActiveTab === 'outcomes' && type === 'bpmn:UserTask' && (
+                    <OutcomesTab
+                        config={stepConfig}
+                        onChange={onStepConfigChange}
                     />
                 )}
 
@@ -238,6 +255,13 @@ export default function PropertyPanel({
                         gateway={element}
                         gatewayConfig={gatewayConfig}
                         onGatewayUpdate={onGatewayUpdate}
+                    />
+                )}
+
+                {validActiveTab === 'decision' && type === 'bpmn:BusinessRuleTask' && (
+                    <BusinessRuleTaskTab
+                        element={element}
+                        modelerRef={modelerRef}
                     />
                 )}
             </div>

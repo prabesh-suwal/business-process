@@ -64,10 +64,12 @@ public class ApiLogEntity {
     private String fullPath;
 
     @Column(name = "query_params", columnDefinition = "JSONB")
-    private String queryParams;
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    private Map<String, Object> queryParams;
 
     @Column(name = "request_headers", columnDefinition = "JSONB")
-    private String requestHeaders;
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    private Map<String, Object> requestHeaders;
 
     @Column(name = "request_body", columnDefinition = "TEXT")
     private String requestBody;

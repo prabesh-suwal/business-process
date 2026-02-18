@@ -45,6 +45,8 @@ export default function MemoEditor() {
     const [actionType, setActionType] = useState(null);
     const [comment, setComment] = useState('');
     const [activeTask, setActiveTask] = useState(null);
+    const [outcomeConfig, setOutcomeConfig] = useState(null);
+    const [actionMeta, setActionMeta] = useState(null);
 
     useEffect(() => {
         loadMemo();
@@ -64,6 +66,17 @@ export default function MemoEditor() {
                     if (tasks && tasks.length > 0) {
                         console.log(`[MemoEditor] Setting activeTask:`, tasks[0]);
                         setActiveTask(tasks[0]);
+                        // Fetch outcome config for the active task
+                        try {
+                            const taskId = tasks[0].workflowTaskId || tasks[0].id;
+                            const config = await TaskApi.getOutcomeConfig(taskId);
+                            if (config) {
+                                console.log(`[MemoEditor] Outcome config:`, config);
+                                setOutcomeConfig(config);
+                            }
+                        } catch (e) {
+                            console.debug('[MemoEditor] No outcome config:', e);
+                        }
                     } else {
                         console.log(`[MemoEditor] No actionable tasks found for this user`);
                     }
@@ -147,8 +160,9 @@ export default function MemoEditor() {
         setMemo({ ...memo, formData });
     };
 
-    const openActionDialog = (type) => {
+    const openActionDialog = (type, meta = null) => {
         setActionType(type);
+        setActionMeta(meta); // { label, style, sets } for dynamic options
         setComment('');
         setActionDialogOpen(true);
     };
@@ -157,29 +171,65 @@ export default function MemoEditor() {
         if (!activeTask) return;
         setSubmitting(true);
         try {
-            const decisionMap = {
-                'approve': 'APPROVE',
-                'reject': 'REJECT',
-                'sendback': 'SEND_BACK'
-            };
-            const decision = decisionMap[actionType] || 'APPROVE';
+            const decision = actionType?.toUpperCase() || 'APPROVE';
+            const variables = { decision };
+
+            // Enterprise pattern: inject all variables from option.sets map
+            if (actionMeta?.sets) {
+                Object.entries(actionMeta.sets).forEach(([key, value]) => {
+                    variables[key] = value;
+                });
+                console.log('[MemoEditor] Injecting sets:', actionMeta.sets);
+            }
 
             await TaskApi.completeTask(
-                activeTask.workflowTaskId || activeTask.id, // Prefer workflowTaskId if available
+                activeTask.workflowTaskId || activeTask.id,
                 decision,
                 comment,
-                { decision }
+                variables
             );
 
             toast.success("Action processed successfully");
             setActionDialogOpen(false);
             loadMemo();
             setActiveTask(null);
+            setOutcomeConfig(null);
+            setActionMeta(null);
         } catch (error) {
             console.error(error);
             toast.error("Failed to process action");
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    // Style helpers for dynamic outcome buttons
+    const getOutcomeStyle = (style) => {
+        switch (style) {
+            case 'success': return 'text-green-600 focus:text-green-700 focus:bg-green-50';
+            case 'danger': return 'text-red-600 focus:text-red-700 focus:bg-red-50';
+            case 'warning': return 'text-orange-600 focus:text-orange-700 focus:bg-orange-50';
+            case 'info': return 'text-blue-600 focus:text-blue-700 focus:bg-blue-50';
+            default: return 'text-slate-600 focus:text-slate-700 focus:bg-slate-50';
+        }
+    };
+
+    const getOutcomeIcon = (style) => {
+        switch (style) {
+            case 'success': return CheckCircle;
+            case 'danger': return XCircle;
+            case 'warning': return CornerUpLeft;
+            default: return CheckCircle;
+        }
+    };
+
+    const getOutcomeButtonStyle = (style) => {
+        switch (style) {
+            case 'success': return 'bg-green-600 hover:bg-green-700 text-white';
+            case 'danger': return 'bg-red-600 hover:bg-red-700 text-white';
+            case 'warning': return 'bg-orange-600 hover:bg-orange-700 text-white';
+            case 'info': return 'bg-blue-600 hover:bg-blue-700 text-white';
+            default: return 'bg-slate-600 hover:bg-slate-700 text-white';
         }
     };
 
@@ -315,18 +365,38 @@ export default function MemoEditor() {
                                     <DropdownMenuContent align="end" className="w-56">
                                         {activeTask && (
                                             <>
-                                                <DropdownMenuItem onClick={() => openActionDialog('approve')} className="text-green-600 focus:text-green-700 focus:bg-green-50 cursor-pointer">
-                                                    <CheckCircle className="mr-2 h-4 w-4" />
-                                                    <span>Approve Memo</span>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => openActionDialog('sendback')} className="text-orange-600 focus:text-orange-700 focus:bg-orange-50 cursor-pointer">
-                                                    <CornerUpLeft className="mr-2 h-4 w-4" />
-                                                    <span>Request Revision</span>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => openActionDialog('reject')} className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer">
-                                                    <XCircle className="mr-2 h-4 w-4" />
-                                                    <span>Reject Memo</span>
-                                                </DropdownMenuItem>
+                                                {outcomeConfig?.options?.length > 0 ? (
+                                                    /* Dynamic outcome buttons from config (enterprise sets pattern) */
+                                                    outcomeConfig.options.map((option, idx) => {
+                                                        const Icon = getOutcomeIcon(option.style);
+                                                        return (
+                                                            <DropdownMenuItem
+                                                                key={idx}
+                                                                onClick={() => openActionDialog(option.label, option)}
+                                                                className={`${getOutcomeStyle(option.style)} cursor-pointer`}
+                                                            >
+                                                                <Icon className="mr-2 h-4 w-4" />
+                                                                <span>{option.label}</span>
+                                                            </DropdownMenuItem>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    /* Default hardcoded buttons */
+                                                    <>
+                                                        <DropdownMenuItem onClick={() => openActionDialog('approve')} className="text-green-600 focus:text-green-700 focus:bg-green-50 cursor-pointer">
+                                                            <CheckCircle className="mr-2 h-4 w-4" />
+                                                            <span>Approve Memo</span>
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={() => openActionDialog('sendback')} className="text-orange-600 focus:text-orange-700 focus:bg-orange-50 cursor-pointer">
+                                                            <CornerUpLeft className="mr-2 h-4 w-4" />
+                                                            <span>Request Revision</span>
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={() => openActionDialog('reject')} className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer">
+                                                            <XCircle className="mr-2 h-4 w-4" />
+                                                            <span>Reject Memo</span>
+                                                        </DropdownMenuItem>
+                                                    </>
+                                                )}
                                                 <DropdownMenuSeparator />
                                             </>
                                         )}
@@ -472,10 +542,11 @@ export default function MemoEditor() {
                         <Button
                             onClick={handleAction}
                             disabled={submitting || (actionType === 'reject' && !comment)}
-                            className={actionType === 'approve' ? 'bg-green-600 hover:bg-green-700 text-white' : actionType === 'reject' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-orange-600 hover:bg-orange-700 text-white'}
+                            className={actionMeta ? getOutcomeButtonStyle(actionMeta.style || 'default')
+                                : actionType === 'approve' ? 'bg-green-600 hover:bg-green-700 text-white' : actionType === 'reject' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-orange-600 hover:bg-orange-700 text-white'}
                         >
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Confirm {actionType === 'sendback' ? 'Revision Request' : actionType}
+                            Confirm {actionMeta?.label || (actionType === 'sendback' ? 'Revision Request' : actionType)}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import com.cas.common.webclient.InternalWebClient;
+
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +43,7 @@ public class WorkflowTaskService {
     private final ProcessTemplateFormRepository processTemplateFormRepository;
     private final ActionTimelineRepository actionTimelineRepository;
     private final VariableAuditRepository variableAuditRepository;
+    @InternalWebClient
     private final WebClient.Builder webClientBuilder;
     @Lazy
     private final ProcessAnalyzerService processAnalyzerService;
@@ -273,15 +276,13 @@ public class WorkflowTaskService {
             taskService.addComment(taskId, task.getProcessInstanceId(), request.getComment());
         }
 
-        // Build variables map — always include 'outcome' derived from approved flag
-        // so BPMN gateways using ${outcome == 'approved'} / ${outcome == 'rejected'}
-        // work
-        Map<String, Object> variables = new java.util.HashMap<>();
-        variables.put("outcome", request.isApproved() ? "approved" : "rejected");
+        // Complete the task with variables (outcome variable is injected upstream by
+        // memo-service)
         if (request.getVariables() != null && !request.getVariables().isEmpty()) {
-            variables.putAll(request.getVariables());
+            taskService.complete(taskId, request.getVariables());
+        } else {
+            taskService.complete(taskId);
         }
-        taskService.complete(taskId, variables);
 
         // Record in timeline
         ActionTimeline timelineEvent = ActionTimeline.builder()

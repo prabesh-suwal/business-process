@@ -1,0 +1,51 @@
+# ======================================================================
+# GATEWAY PRODUCT — PRODUCTION PROFILE
+# ======================================================================
+
+spring:
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:consul}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        prefer-ip-address: true
+        ip-address: ${HOST_IP:gateway-product}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+
+# Route target URLs — override localhost with Docker service names
+gateway:
+  routes:
+    cas-url: http://cas-server:9000
+    memo-url: http://memo-service:9008
+    lms-url: http://lms-service:9005
+    person-url: http://person-service:9007
+    workflow-url: http://workflow-service:9002
+    form-url: http://form-service:9006
+    org-url: http://organization-service:9003
+    document-url: http://document-service:9010
+
+  jwt:
+    jwks-uri: http://cas-server:9000/.well-known/jwks.json
+    issuer: ${CAS_ISSUER:http://cas-server:9000}
+
+logging:
+  level:
+    com.lms.gateway: INFO
+    org.springframework.cloud.gateway: WARN
+
+services:
+  workflow-service:
+    url: http://workflow-service:9002
+  form-service:
+    url: http://form-service:9006
+  cas-server:
+    url: http://cas-server:9000
+  document-service:
+    url: http://document-service:9010
+  audit-service:
+    url: http://audit-service:9009
+    enabled: true

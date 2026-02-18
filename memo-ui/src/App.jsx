@@ -1,8 +1,7 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import MainLayout from './components/MainLayout';
 import Dashboard from './pages/Dashboard';
 import CreateMemo from './pages/CreateMemo';
-
 import MemoEditor from './pages/MemoEditor';
 import Drafts from './pages/Drafts';
 import Login from './pages/Login';
@@ -12,6 +11,8 @@ import WorkflowDesignerPage from './pages/WorkflowDesignerPage';
 import Memos from './pages/Memos';
 import ViewOnlyMemoDetail from './pages/ViewOnlyMemoDetail';
 import ReportsPage from './pages/ReportsPage';
+import DmnListPage from './pages/DmnListPage';
+import DmnDesignerPage from './pages/DmnDesignerPage';
 
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -19,35 +20,34 @@ import ProtectedRoute from './components/ProtectedRoute';
 function App() {
     return (
         <AuthProvider>
-            <Router>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
+            <Routes>
 
-                    {/* Protected Routes */}
-                    <Route element={<ProtectedRoute />}>
-                        <Route path="/" element={<MainLayout />}>
-                            <Route index element={<Dashboard />} />
-                            <Route path="create" element={<CreateMemo />} />
-                            <Route path="create-memo" element={<CreateMemo />} />
-                            <Route path="memo/:id" element={<MemoEditor />} />
-                            <Route path="edit/:id" element={<MemoEditor />} />
-                            <Route path="tasks" element={<TaskInbox />} />
+                <Route path="/login" element={<Login />} />
 
-                            <Route path="drafts" element={<Drafts />} />
-                            <Route path="memos" element={<Memos />} />
-                            <Route path="memos/:id/view" element={<ViewOnlyMemoDetail />} />
-                            <Route path="memos/:id/view-only" element={<ViewOnlyMemoDetail />} />
-                            <Route path="settings" element={<Settings />} />
-                            <Route path="reports" element={<ReportsPage />} />
-                            <Route path="archives" element={<Memos />} />
-                            <Route path="workflow/:topicId" element={<WorkflowDesignerPage />} />
-                        </Route>
+                <Route element={<ProtectedRoute />}>
+                    <Route path="/" element={<MainLayout />}>
+                        <Route index element={<Dashboard />} />
+                        <Route path="create" element={<CreateMemo />} />
+                        <Route path="create-memo" element={<CreateMemo />} />
+                        <Route path="memo/:id" element={<MemoEditor />} />
+                        <Route path="edit/:id" element={<MemoEditor />} />
+                        <Route path="tasks" element={<TaskInbox />} />
+                        <Route path="drafts" element={<Drafts />} />
+                        <Route path="memos" element={<Memos />} />
+                        <Route path="memos/:id/view" element={<ViewOnlyMemoDetail />} />
+                        <Route path="memos/:id/view-only" element={<ViewOnlyMemoDetail />} />
+                        <Route path="settings" element={<Settings />} />
+                        <Route path="reports" element={<ReportsPage />} />
+                        <Route path="archives" element={<Memos />} />
+                        <Route path="workflow/:topicId" element={<WorkflowDesignerPage />} />
+                        <Route path="dmn" element={<DmnListPage />} />
+                        <Route path="dmn/:decisionId" element={<DmnDesignerPage />} />
                     </Route>
-                </Routes>
-            </Router>
+                </Route>
+
+            </Routes>
         </AuthProvider>
     );
 }
 
 export default App;
-

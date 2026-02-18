@@ -92,7 +92,9 @@ const WorkflowDesignerPage = () => {
             // Load topic with workflow
             const topicData = await MemoApi.getTopic(topicId);
             setTopic(topicData);
-            setBpmnXml(topicData.workflowXml || null);
+            const loadedXml = topicData.workflowXml || null;
+            console.log('[loadData] Loaded XML length:', loadedXml?.length, 'contains conditionExpression:', loadedXml?.includes('conditionExpression'));
+            setBpmnXml(loadedXml);
 
             // Load memo-wide viewers
             if (topicData.viewerConfig && topicData.viewerConfig.viewers) {
@@ -350,9 +352,31 @@ const WorkflowDesignerPage = () => {
         try {
             setSaving(true);
 
+            // Get fresh XML directly from the modeler to ensure condition expressions are included
+            // (React state bpmnXml may be stale if commandStack.changed export hasn't completed yet)
+            let xmlToSave = bpmnXml;
+            if (bpmnDesignerRef.current?.getModeler) {
+                try {
+                    const result = await bpmnDesignerRef.current.getModeler().saveXML({ format: true });
+                    if (result?.xml) {
+                        xmlToSave = result.xml;
+                        setBpmnXml(xmlToSave); // sync state
+                    }
+                } catch (e) {
+                    console.warn('Could not get fresh XML from modeler, using state:', e);
+                }
+            }
+
             // Save BPMN XML only if it exists
-            if (bpmnXml) {
-                await MemoApi.updateTopicWorkflow(topicId, bpmnXml);
+            if (xmlToSave) {
+                const hasCondition = xmlToSave.includes('conditionExpression');
+                console.log('[handleSaveAll] XML length:', xmlToSave.length, 'contains conditionExpression:', hasCondition);
+                if (hasCondition) {
+                    // Extract and log all condition expressions
+                    const matches = xmlToSave.match(/conditionExpression[^>]*>([^<]*)</g);
+                    console.log('[handleSaveAll] Condition expressions found:', matches);
+                }
+                await MemoApi.updateTopicWorkflow(topicId, xmlToSave);
             }
 
             // Save step configs
@@ -457,8 +481,22 @@ const WorkflowDesignerPage = () => {
             console.log('📋 stepConfigs:', JSON.stringify(stepConfigs, null, 2));
             console.log('🔢 Number of steps to save:', Object.keys(stepConfigs).length);
 
+            // Get fresh XML directly from the modeler to ensure condition expressions are included
+            let xmlToSave = bpmnXml;
+            if (bpmnDesignerRef.current?.getModeler) {
+                try {
+                    const result = await bpmnDesignerRef.current.getModeler().saveXML({ format: true });
+                    if (result?.xml) {
+                        xmlToSave = result.xml;
+                        setBpmnXml(xmlToSave); // sync state
+                    }
+                } catch (e) {
+                    console.warn('Could not get fresh XML from modeler, using state:', e);
+                }
+            }
+
             // First save BPMN to topic
-            await MemoApi.updateTopicWorkflow(currentTopicId, bpmnXml);
+            await MemoApi.updateTopicWorkflow(currentTopicId, xmlToSave);
 
             // Save step configs to memo-service (REQUIRED for BpmnEnricher to inject conditions)
             const saveToMemoPromises = Object.keys(stepConfigs).map(taskKey => {

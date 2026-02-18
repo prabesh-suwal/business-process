@@ -32,6 +32,7 @@ public class ProcessDesignService {
         private final ProcessTemplateFormRepository processTemplateFormRepository;
         private final ActionTimelineRepository actionTimelineRepository;
         private final RepositoryService repositoryService;
+        private final com.enterprise.workflow.repository.DecisionTableRepository decisionTableRepository;
 
         /**
          * Create a new process template (DRAFT status).
@@ -89,6 +90,8 @@ public class ProcessDesignService {
         /**
          * Deploy a process template to Flowable engine.
          * This makes the template ACTIVE and creates a Flowable process definition.
+         * If the BPMN references DMN decision tables (via Business Rule Tasks),
+         * those DMN definitions are co-deployed in the same deployment.
          */
         public ProcessTemplateDTO deployTemplate(UUID templateId, UUID deployedBy) {
                 ProcessTemplate template = processTemplateRepository.findById(templateId)
@@ -101,15 +104,36 @@ public class ProcessDesignService {
                 // Generate process definition key from template name
                 String processDefKey = generateProcessDefKey(template);
 
-                // Deploy to Flowable
-                Deployment deployment = repositoryService.createDeployment()
+                // Build deployment with BPMN
+                var deploymentBuilder = repositoryService.createDeployment()
                                 .name(template.getName() + " v" + template.getVersion())
                                 .disableSchemaValidation()
                                 .addInputStream(
                                                 processDefKey + ".bpmn20.xml",
                                                 new ByteArrayInputStream(
-                                                                template.getBpmnXml().getBytes(StandardCharsets.UTF_8)))
-                                .deploy();
+                                                                template.getBpmnXml()
+                                                                                .getBytes(StandardCharsets.UTF_8)));
+
+                // Co-deploy referenced DMN decision tables
+                List<String> dmnKeys = extractDecisionTableKeys(template.getBpmnXml());
+                for (String dmnKey : dmnKeys) {
+                        var dmnTable = decisionTableRepository
+                                        .findByKeyAndStatus(dmnKey,
+                                                        com.enterprise.workflow.entity.DecisionTable.DecisionTableStatus.ACTIVE);
+                        if (dmnTable.isPresent() && dmnTable.get().getDmnXml() != null) {
+                                log.info("Co-deploying DMN decision table '{}' with BPMN process", dmnKey);
+                                deploymentBuilder.addInputStream(
+                                                dmnKey + ".dmn",
+                                                new ByteArrayInputStream(
+                                                                dmnTable.get().getDmnXml()
+                                                                                .getBytes(StandardCharsets.UTF_8)));
+                        } else {
+                                log.warn("BPMN references DMN key '{}' but no ACTIVE decision table found — skipping",
+                                                dmnKey);
+                        }
+                }
+
+                Deployment deployment = deploymentBuilder.deploy();
 
                 // Get the deployed process definition
                 ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
@@ -123,10 +147,31 @@ public class ProcessDesignService {
 
                 template = processTemplateRepository.save(template);
 
-                log.info("Deployed process template {} to Flowable. Deployment ID: {}, Process Definition Key: {}",
-                                template.getName(), deployment.getId(), processDefinition.getKey());
+                log.info("Deployed process template {} to Flowable. Deployment ID: {}, Process Definition Key: {}, DMN keys: {}",
+                                template.getName(), deployment.getId(), processDefinition.getKey(), dmnKeys);
 
                 return toDTO(template);
+        }
+
+        /**
+         * Extract DMN decision table keys referenced by businessRuleTask elements in
+         * the BPMN XML.
+         * Looks for flowable:decisionTableReferenceKey attributes.
+         */
+        private List<String> extractDecisionTableKeys(String bpmnXml) {
+                List<String> keys = new java.util.ArrayList<>();
+                try {
+                        // Simple regex extraction — more robust than full XML parsing for this use case
+                        var pattern = java.util.regex.Pattern.compile(
+                                        "flowable:decisionTableReferenceKey=\"([^\"]+)\"");
+                        var matcher = pattern.matcher(bpmnXml);
+                        while (matcher.find()) {
+                                keys.add(matcher.group(1));
+                        }
+                } catch (Exception e) {
+                        log.warn("Could not extract DMN keys from BPMN XML: {}", e.getMessage());
+                }
+                return keys;
         }
 
         /**

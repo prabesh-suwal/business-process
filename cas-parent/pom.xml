@@ -22,11 +22,17 @@
     <modules>
         <module>../cas-common</module>
         <module>../cas-server</module>
+        <module>../admin-gateway</module>
         <module>../gateway-product</module>
         <module>../wfm-gateway</module>
         <module>../workflow-service</module>
         <module>../form-service</module>
         <module>../memo-service</module>
+        <module>../document-service</module>
+        <module>../organization-service</module>
+        <module>../policy-engine-service</module>
+        <module>../notification-service</module>
+        <module>../person-service</module>
         <module>../audit-service</module>
     </modules>
 

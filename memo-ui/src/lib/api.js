@@ -1,13 +1,15 @@
 import axios from 'axios';
 
 // API Configuration - Memo Gateway
-const GATEWAY_URL = 'http://localhost:8086'; // gateway-product port
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || (import.meta.env.PROD ? '' : 'http://localhost:8086');
 
 // Token refresh state
 let isRefreshing = false;
 let refreshPromise = null;
+console.log("Gateway URL:", GATEWAY_URL);
 
 const api = axios.create({
+
     baseURL: GATEWAY_URL,
     headers: {
         'Content-Type': 'application/json',
@@ -175,6 +177,11 @@ export const MemoApi = {
     // All accessible memos (created by, involved in workflow, or viewer)
     getAccessibleMemos: () => api.get('/memos/accessible').then(res => res.data),
 
+    // Comments
+    getComments: (memoId) => api.get(`/memos/${memoId}/comments`).then(res => res.data),
+    addComment: (memoId, data) => api.post(`/memos/${memoId}/comments`, data).then(res => res.data),
+    deleteComment: (memoId, commentId) => api.delete(`/memos/${memoId}/comments/${commentId}`).then(res => res.data),
+
     // Attachments
     uploadAttachment: (memoId, file) => {
         const formData = new FormData();
@@ -184,10 +191,76 @@ export const MemoApi = {
         }).then(res => res.data);
     },
     getAttachments: (memoId) => api.get(`/memos/${memoId}/attachments`).then(res => res.data),
-    getAttachmentUrl: (memoId, attachmentId) => `${GATEWAY_URL}/memos/${memoId}/attachments/${attachmentId}/download`,
+    downloadAttachment: async (memoId, attachmentId, fileName) => {
+        const response = await api.get(`/memos/${memoId}/attachments/${attachmentId}/download`, {
+            responseType: 'blob',
+        });
+        const blob = new Blob([response.data]);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName || 'download';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+    },
+    deleteAttachment: (memoId, attachmentId) => api.delete(`/memos/${memoId}/attachments/${attachmentId}`),
 
     // Auth
     getSession: () => api.get('/auth/session').then(res => res.data),
+
+    /**
+     * Check if there's an active SSO session (e.g., from admin-ui login).
+     * Returns session info if active, null if not.
+     */
+    checkSSO: async () => {
+        try {
+            const response = await fetch(`${GATEWAY_URL}/auth/session`, {
+                credentials: 'include'
+            });
+            const data = await response.json();
+            return data.active ? data : null;
+        } catch (error) {
+            console.warn('SSO check failed:', error);
+            return null;
+        }
+    },
+
+    /**
+     * Get tokens for MMS product using an existing SSO session.
+     */
+    getTokenForProduct: async (productCode = 'MMS') => {
+        const response = await fetch(`${GATEWAY_URL}/auth/token-for-product`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ productCode })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get token for product');
+        }
+
+        const data = await response.json();
+
+        // Store tokens
+        if (data.tokens) {
+            if (data.tokens.access_token) {
+                localStorage.setItem('access_token', data.tokens.access_token);
+            }
+            if (data.tokens.refresh_token) {
+                localStorage.setItem('refresh_token', data.tokens.refresh_token);
+            }
+        }
+
+        // Store user info
+        if (data.user) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+        }
+
+        return data;
+    },
 
     login: (username, password) => {
         return api.post('/auth/login', {
@@ -214,7 +287,39 @@ export const MemoApi = {
             // Clear tokens even if logout request fails
             clearTokens();
         });
-    }
+    },
+
+    // ==================== DMN DECISION TABLES ====================
+
+    // List all decision tables (optionally by productId)
+    listDecisionTables: (productId) => api.get('/workflow/api/dmn', { params: productId ? { productId } : {} }).then(res => res.data),
+
+    // Get a single decision table by ID
+    getDecisionTable: (id) => api.get(`/workflow/api/dmn/${id}`).then(res => res.data),
+
+    // Create a new decision table (DRAFT)
+    createDecisionTable: (data) => api.post('/workflow/api/dmn', data).then(res => res.data),
+
+    // Update a DRAFT decision table (dmnXml, name, description)
+    updateDecisionTable: (id, data) => api.put(`/workflow/api/dmn/${id}`, data).then(res => res.data),
+
+    // Deploy a decision table to Flowable DMN engine (DRAFT → ACTIVE)
+    deployDecisionTable: (id) => api.post(`/workflow/api/dmn/${id}/deploy`).then(res => res.data),
+
+    // Delete a DRAFT decision table
+    deleteDecisionTable: (id) => api.delete(`/workflow/api/dmn/${id}`).then(res => res.data),
+
+    // Deprecate an ACTIVE decision table (ACTIVE → DEPRECATED)
+    deprecateDecisionTable: (id) => api.post(`/workflow/api/dmn/${id}/deprecate`).then(res => res.data),
+
+    // Create new version of a decision table
+    createDecisionTableVersion: (id) => api.post(`/workflow/api/dmn/${id}/new-version`).then(res => res.data),
+
+    // List active decision table keys (for BPMN Business Rule Task dropdown)
+    listDecisionTableKeys: (productId) => api.get('/workflow/api/dmn/keys', { params: productId ? { productId } : {} }).then(res => res.data),
+
+    // Test-evaluate a deployed decision table
+    evaluateDecisionTable: (key, variables) => api.post(`/workflow/api/dmn/evaluate/${key}`, variables).then(res => res.data),
 };
 
 export const WorkflowApi = {
@@ -251,6 +356,9 @@ export const TaskApi = {
 
     // Get tasks for a specific memo
     getTasksForMemo: (memoId) => api.get(`/memo/api/tasks/memo/${memoId}`).then(res => res.data),
+
+    // Get outcome configuration for a task (variable name + options)
+    getOutcomeConfig: (taskId) => api.get(`/memo/api/tasks/${taskId}/outcome-config`).then(res => res.data).catch(() => null),
 
     // Committee voting (still through workflow for now, TODO: move to memo)
     castVote: (taskId, decision, comment) => api.post(`/workflow/api/tasks/${taskId}/vote`, { decision, comment }).then(res => res.data),
@@ -378,5 +486,3 @@ export const WorkflowConfigApi = {
 };
 
 export default api;
-
-

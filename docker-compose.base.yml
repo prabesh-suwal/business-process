@@ -1,0 +1,314 @@
+# ==============================================================================
+# BASE COMPOSE — Shared Infrastructure + Core Backend Services
+# ==============================================================================
+# This file is included by docker-compose.memo.yml and docker-compose.admin.yml
+# Do NOT run this file directly.
+# ==============================================================================
+
+services:
+  # ─────────────── Infrastructure ───────────────
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  consul:
+    image: hashicorp/consul:1.17
+    container_name: consul
+    restart: unless-stopped
+    ports:
+      - "${CONSUL_PORT:-8500}:8500"
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8500/v1/status/leader" ]
+      interval: 10s
+      timeout: 5s
+    retries: 5
+  networks:
+    - app-network
+
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: minio
+  #   restart: unless-stopped
+  #   command: server /data --console-address ":9001"
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin123}
+  #   ports:
+  #     - "9010:9000" # S3 API
+  #     - "9011:9001" # Console
+  #   volumes:
+  #     - minio_data:/data
+  #   healthcheck:
+  #     test: [ "CMD", "mc", "ready", "local" ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   networks:
+  #     - app-network
+
+  # ─────────────── Core Backend Services ───────────────
+
+  cas-server:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/cas-server:${TAG:-latest}
+    container_name: cas-server
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      CONSUL_HOST: consul
+      CAS_ISSUER: ${CAS_ISSUER:-http://cas-server:9000}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      CORS_ORIGIN_MEMO_UI: ${CORS_ORIGIN_MEMO_UI:-http://localhost:3001}
+      CORS_ORIGIN_ADMIN_UI: ${CORS_ORIGIN_ADMIN_UI:-http://localhost:3002}
+    depends_on:
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - app-network
+
+  workflow-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/workflow-service:${TAG:-latest}
+    container_name: workflow-service
+    restart: unless-stopped
+    ports:
+      - "9002:9002"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      cas-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - app-network
+
+  form-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/form-service:${TAG:-latest}
+    container_name: form-service
+    restart: unless-stopped
+    ports:
+      - "9006:9006"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MINIO_USER: ${MINIO_USER:-minioadmin}
+      MINIO_PASSWORD: ${MINIO_PASSWORD:-minioadmin123}
+    depends_on:
+      cas-server:
+        condition: service_started
+      # minio:
+      #   condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  document-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/document-service:${TAG:-latest}
+    container_name: document-service
+    restart: unless-stopped
+    ports:
+      - "9010:9010"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MINIO_USER: ${MINIO_USER:-minioadmin}
+      MINIO_PASSWORD: ${MINIO_PASSWORD:-minioadmin123}
+    # depends_on:
+    #   minio:
+    #     condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  organization-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/organization-service:${TAG:-latest}
+    container_name: organization-service
+    restart: unless-stopped
+    ports:
+      - "9003:9003"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      CONSUL_HOST: consul
+      CORS_ORIGIN_MEMO_UI: ${CORS_ORIGIN_MEMO_UI:-http://localhost:3001}
+      CORS_ORIGIN_ADMIN_UI: ${CORS_ORIGIN_ADMIN_UI:-http://localhost:3002}
+    depends_on:
+      consul:
+        condition: service_healthy
+      cas-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  policy-engine-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/policy-engine-service:${TAG:-latest}
+    container_name: policy-engine-service
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      CORS_ORIGIN_MEMO_UI: ${CORS_ORIGIN_MEMO_UI:-http://localhost:3001}
+      CORS_ORIGIN_ADMIN_UI: ${CORS_ORIGIN_ADMIN_UI:-http://localhost:3002}
+    depends_on:
+      redis:
+        condition: service_healthy
+      cas-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  notification-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/notification-service:${TAG:-latest}
+    container_name: notification-service
+    restart: unless-stopped
+    ports:
+      - "9004:9004"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  audit-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/audit-service:${TAG:-latest}
+    container_name: audit-service
+    restart: unless-stopped
+    ports:
+      - "9009:9009"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      CONSUL_HOST: consul
+    depends_on:
+      consul:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  person-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/person-service:${TAG:-latest}
+    container_name: person-service
+    restart: unless-stopped
+    ports:
+      - "9007:9007"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+volumes:
+  redis_data:
+  consul_data:
+  minio_data:
+
+
+networks:
+  app-network:
+    driver: bridge

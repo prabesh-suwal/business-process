@@ -36,22 +36,14 @@ services:
     url: http://localhost:9006
   cas-server:
     url: http://localhost:9000
+  document-service:
+    url: http://localhost:9010
 
 # CAS Integration
 cas:
   jwks-url: http://localhost:9000/.well-known/jwks.json
   
-# MinIO Configuration
-minio:
-  endpoint: http://localhost:9010
-  access-key: minioadmin
-  secret-key: minioadmin123
-  bucket-name: memo-attachments
 
-# Storage Configuration
-storage:
-  type: filesystem # Options: filesystem, minio
-  location: uploads
 
 # Actuator
 management:

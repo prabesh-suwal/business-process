@@ -1,5 +1,6 @@
 package com.enterprise.lms.client;
 
+import com.cas.common.webclient.InternalWebClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +19,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PersonServiceClient {
 
+    @InternalWebClient
     private final WebClient.Builder webClientBuilder;
 
     @Value("${services.person-service.url:http://localhost:9007}")

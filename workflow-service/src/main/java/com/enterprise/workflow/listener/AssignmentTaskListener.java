@@ -11,6 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import com.cas.common.webclient.InternalWebClient;
+
 import java.util.*;
 
 /**
@@ -32,7 +34,7 @@ public class AssignmentTaskListener implements TaskListener {
     @Value("${memo.service.url:http://localhost:9008}")
     private String memoServiceUrl;
 
-    public AssignmentTaskListener(WebClient.Builder webClientBuilder,
+    public AssignmentTaskListener(@InternalWebClient WebClient.Builder webClientBuilder,
             AssignmentResolverService assignmentResolver) {
         this.webClientBuilder = webClientBuilder;
         this.assignmentResolver = assignmentResolver;

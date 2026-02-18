@@ -5,11 +5,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 
 /**
  * HTTP publisher for audit log events.
  * Sends audit logs to the centralized audit-service.
+ * 
+ * Uses WebClient (with UserContextWebClientFilter) to automatically
+ * propagate user context headers for service-to-service calls.
  * 
  * This bean is registered by
  * {@link com.cas.common.logging.LoggingAutoConfiguration}.
@@ -18,18 +21,15 @@ import org.springframework.web.client.RestClient;
 public class AuditLogPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(AuditLogPublisher.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final RestClient restClient;
+    private final WebClient webClient;
     private final String auditServiceUrl;
     private final boolean enabled;
 
-    public AuditLogPublisher(String auditServiceUrl, boolean enabled) {
+    public AuditLogPublisher(WebClient.Builder webClientBuilder, String auditServiceUrl, boolean enabled) {
         this.auditServiceUrl = auditServiceUrl;
         this.enabled = enabled;
-        this.restClient = RestClient.builder()
-                .baseUrl(auditServiceUrl)
-                .build();
+        this.webClient = webClientBuilder.baseUrl(auditServiceUrl).build();
 
         log.info("AuditLogPublisher initialized: url={}, enabled={}", auditServiceUrl, enabled);
     }
@@ -46,12 +46,13 @@ public class AuditLogPublisher {
         }
 
         try {
-            restClient.post()
+            webClient.post()
                     .uri("/api/logs/audit")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(event)
+                    .bodyValue(event)
                     .retrieve()
-                    .toBodilessEntity();
+                    .toBodilessEntity()
+                    .block();
 
             log.trace("Published audit log: {}", event.getAuditId());
         } catch (Exception e) {

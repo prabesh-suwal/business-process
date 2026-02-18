@@ -1,5 +1,6 @@
 package com.enterprise.memo.client;
 
+import com.cas.common.webclient.InternalWebClient;
 import com.enterprise.memo.dto.StartProcessRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +21,10 @@ import java.util.UUID;
 @Slf4j
 public class WorkflowClient {
 
+        @InternalWebClient
         private final WebClient.Builder webClientBuilder;
 
-        @Value("${workflow.service.url:http://localhost:9002}")
+        @Value("${services.workflow-service.url:http://localhost:9002}")
         private String workflowServiceUrl;
 
         /**
@@ -80,7 +82,9 @@ public class WorkflowClient {
                 Map<String, Object> requestBody = new java.util.HashMap<>();
                 requestBody.put("variables", variables != null ? variables : Map.of());
                 requestBody.put("comment", variables != null ? variables.get("comment") : null);
-                requestBody.put("approved", true); // Default to true for now
+                // Derive approved flag from the decision/action variable
+                String decision = variables != null ? String.valueOf(variables.getOrDefault("decision", "")) : "";
+                requestBody.put("approved", "APPROVE".equalsIgnoreCase(decision));
 
                 StringBuilder urlBuilder = new StringBuilder(workflowServiceUrl + "/api/tasks/" + taskId + "/complete");
 
@@ -197,5 +201,26 @@ public class WorkflowClient {
                                                 new org.springframework.core.ParameterizedTypeReference<java.util.List<Map<String, Object>>>() {
                                                 })
                                 .block();
+        }
+
+        /**
+         * Get outcome configuration for a task.
+         * Returns the configured variable name and options for task completion.
+         */
+        @SuppressWarnings("unchecked")
+        public Map<String, Object> getOutcomeConfig(String taskId) {
+                log.debug("Getting outcome config for task: {}", taskId);
+
+                try {
+                        return webClientBuilder.build()
+                                        .get()
+                                        .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/outcome-config")
+                                        .retrieve()
+                                        .bodyToMono(Map.class)
+                                        .block();
+                } catch (Exception e) {
+                        log.debug("No outcome config for task {}: {}", taskId, e.getMessage());
+                        return null;
+                }
         }
 }

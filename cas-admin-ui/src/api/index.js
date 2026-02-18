@@ -1,7 +1,6 @@
 // API Configuration - Admin Gateway
-const GATEWAY_URL = import.meta.env.PROD
-    ? 'https://admin-api.cas.local'  // Production Admin Gateway URL
-    : 'http://localhost:8085';       // Development Admin Gateway URL
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || (import.meta.env.PROD ? '' : 'http://localhost:8085');
+
 
 let accessToken = localStorage.getItem('accessToken');
 let isRefreshing = false;

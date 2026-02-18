@@ -1,0 +1,54 @@
+# ======================================================================
+# CAS SERVER — PRODUCTION PROFILE
+# Overrides localhost references for Docker networking
+# ======================================================================
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:host.docker.internal}:${DB_PORT:5432}/cas
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:consul}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        prefer-ip-address: true
+        ip-address: ${HOST_IP:cas-server}
+
+cas:
+  issuer: ${CAS_ISSUER:http://cas-server:9000}
+
+  session:
+    cookie-domain: ${COOKIE_DOMAIN:}
+    cookie-secure: ${COOKIE_SECURE:false}
+
+  security:
+    allowed-origins:
+      - ${CORS_ORIGIN_MEMO_UI:http://localhost:3001}
+      - ${CORS_ORIGIN_ADMIN_UI:http://localhost:3002}
+
+logging:
+  level:
+    com.cas: INFO
+    org.springframework.security: WARN
+    org.flywaydb: INFO
+
+services:
+  workflow-service:
+    url: http://workflow-service:9002
+  form-service:
+    url: http://form-service:9006
+  cas-server:
+    url: http://cas-server:9000
+  document-service:
+    url: http://document-service:9010
+  audit-service:
+    url: http://audit-service:9009
+    enabled: true

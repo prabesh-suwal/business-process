@@ -6,6 +6,7 @@ import com.lms.gateway.filter.JwtAuthenticationGatewayFilterFactory;
 import com.lms.gateway.filter.ScopeEnforcementGatewayFilterFactory;
 import com.lms.gateway.service.JwtValidationService;
 import com.lms.gateway.service.ScopeEnforcementService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
@@ -14,13 +15,29 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RouteConfig {
 
-        private final String CAS_URL = "http://localhost:9000";
-        private final String MEMO_URL = "http://localhost:9008";
-        private final String LMS_URL = "http://localhost:9005";
-        private final String PERSON_URL = "http://localhost:9007";
-        private final String WORKFLOW_URL = "http://localhost:9002";
-        private final String FORM_URL = "http://localhost:9006";
-        private final String ORG_URL = "http://localhost:9003"; // Organization service
+        @Value("${gateway.routes.cas-url:http://localhost:9000}")
+        private String CAS_URL;
+
+        @Value("${gateway.routes.memo-url:http://localhost:9008}")
+        private String MEMO_URL;
+
+        @Value("${gateway.routes.lms-url:http://localhost:9005}")
+        private String LMS_URL;
+
+        @Value("${gateway.routes.person-url:http://localhost:9007}")
+        private String PERSON_URL;
+
+        @Value("${gateway.routes.workflow-url:http://localhost:9002}")
+        private String WORKFLOW_URL;
+
+        @Value("${gateway.routes.form-url:http://localhost:9006}")
+        private String FORM_URL;
+
+        @Value("${gateway.routes.org-url:http://localhost:9003}")
+        private String ORG_URL;
+
+        @Value("${gateway.routes.document-url:http://localhost:9010}")
+        private String DOCUMENT_URL;
 
         @Bean
         public RouteLocator customRouteLocator(RouteLocatorBuilder builder,
@@ -203,6 +220,14 @@ public class RouteConfig {
                                                                 .removeResponseHeader("WWW-Authenticate"))
                                                 .uri(WORKFLOW_URL))
 
+                                .route("workflow-dmn", r -> r.path("/workflow/api/dmn", "/workflow/api/dmn/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/workflow(?<segment>/?.*)", "${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(WORKFLOW_URL))
+
                                 // --- Form Service Routes ---
                                 .route("mms-form-service", r -> r.path("/memo/api/forms/**")
                                                 .filters(f -> f.filter(jwtAuthentication.apply(
@@ -258,6 +283,16 @@ public class RouteConfig {
                                                                                 "/api/geo${segment}")
                                                                 .removeResponseHeader("WWW-Authenticate"))
                                                 .uri(ORG_URL))
+
+                                // --- Document Service Routes ---
+                                .route("document-service", r -> r.path("/documents/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/documents(?<segment>/?.*)",
+                                                                                "/api/documents${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(DOCUMENT_URL))
 
                                 .build();
         }

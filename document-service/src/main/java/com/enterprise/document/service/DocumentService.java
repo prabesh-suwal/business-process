@@ -166,6 +166,7 @@ public class DocumentService {
                 .uploadedBy(document.getUploadedBy())
                 .uploadedByName(document.getUploadedByName())
                 .uploadedAt(document.getUploadedAt())
+                .downloadUrl("/api/documents/" + document.getId() + "/download")
                 .build();
     }
 }

@@ -2,3 +2,4 @@ com.cas.common.logging.LoggingAutoConfiguration
 com.cas.common.audit.AuditCoreAutoConfiguration
 com.cas.common.audit.AuditServletAutoConfiguration
 com.cas.common.audit.AuditReactiveAutoConfiguration
+com.cas.common.webclient.WebClientAutoConfiguration

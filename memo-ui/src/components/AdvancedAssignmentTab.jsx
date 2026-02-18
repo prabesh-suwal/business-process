@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Button } from '../components/ui/button';
+import { cn, generateId } from '../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import AssignmentRuleCard from '../components/AssignmentRuleCard';
 import { Plus, Eye, AlertCircle, Info, Users, Shield, X } from 'lucide-react';
@@ -42,7 +43,7 @@ const AdvancedAssignmentTab = ({
     // Add a new empty rule
     const addRule = useCallback(() => {
         const newRule = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             name: `Rule ${rules.length + 1}`,
             criteria: {}
         };
@@ -202,8 +203,8 @@ const AdvancedAssignmentTab = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                     <label className={`flex items-center p-2 border rounded-md cursor-pointer text-xs transition-all ${completionMode === 'ANY'
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-slate-200 hover:border-slate-300'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-slate-200 hover:border-slate-300'
                         }`}>
                         <input
                             type="radio"
@@ -219,8 +220,8 @@ const AdvancedAssignmentTab = ({
                         </div>
                     </label>
                     <label className={`flex items-center p-2 border rounded-md cursor-pointer text-xs transition-all ${completionMode === 'ALL'
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-slate-200 hover:border-slate-300'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-slate-200 hover:border-slate-300'
                         }`}>
                         <input
                             type="radio"

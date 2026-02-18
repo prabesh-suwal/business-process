@@ -1,9 +1,7 @@
 package com.enterprise.policyengine.entity;
 
-import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.Type;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
@@ -54,8 +52,8 @@ public class EvaluationAuditLog {
     @Column(name = "evaluation_time_ms")
     private Integer evaluationTimeMs;
 
-    @Type(JsonType.class)
-    @Column(name = "request_context", columnDefinition = "jsonb")
+    @Column(name = "request_context", columnDefinition = "JSONB")
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     private Map<String, Object> requestContext;
 
     @CreatedDate

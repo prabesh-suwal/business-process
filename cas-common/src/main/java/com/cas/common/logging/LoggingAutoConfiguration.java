@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.web.reactive.function.client.WebClient;
 
 /**
  * Auto-configuration for the three-tier logging system.
@@ -28,9 +29,10 @@ public class LoggingAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public AuditLogPublisher auditLogPublisher(
-            @Value("${audit.service-url:http://localhost:9009}") String auditServiceUrl,
-            @Value("${audit.enabled:true}") boolean enabled) {
-        return new AuditLogPublisher(auditServiceUrl, enabled);
+            WebClient.Builder webClientBuilder,
+            @Value("${services.audit-service.url:http://localhost:9009}") String auditServiceUrl,
+            @Value("${services.audit-service.enabled:true}") boolean enabled) {
+        return new AuditLogPublisher(webClientBuilder, auditServiceUrl, enabled);
     }
 
     @Bean
@@ -44,9 +46,10 @@ public class LoggingAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ActivityLogPublisher activityLogPublisher(
+            WebClient.Builder webClientBuilder,
             @Value("${audit.service-url:http://localhost:9009}") String auditServiceUrl,
             @Value("${audit.enabled:true}") boolean enabled) {
-        return new ActivityLogPublisher(auditServiceUrl, enabled);
+        return new ActivityLogPublisher(webClientBuilder, auditServiceUrl, enabled);
     }
 
     @Bean

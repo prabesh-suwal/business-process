@@ -94,6 +94,33 @@ public class TaskController {
         variables.put("decision", request.getAction());
         variables.put("comment", request.getComment());
 
+        // Enterprise pattern: resolve outcome config and inject option.sets variables
+        try {
+            java.util.Map<String, Object> outcomeConfig = workflowClient.getOutcomeConfig(taskId);
+            if (outcomeConfig != null && outcomeConfig.get("options") != null) {
+                @SuppressWarnings("unchecked")
+                java.util.List<java.util.Map<String, Object>> options = (java.util.List<java.util.Map<String, Object>>) outcomeConfig
+                        .get("options");
+
+                // Find the option whose label matches the action
+                String action = request.getAction();
+                for (java.util.Map<String, Object> option : options) {
+                    String label = (String) option.get("label");
+                    if (label != null && label.equalsIgnoreCase(action)) {
+                        @SuppressWarnings("unchecked")
+                        java.util.Map<String, Object> sets = (java.util.Map<String, Object>) option.get("sets");
+                        if (sets != null && !sets.isEmpty()) {
+                            variables.putAll(sets);
+                            log.info("Injected sets from outcome option '{}': {}", label, sets);
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not resolve outcome config for task {}: {}", taskId, e.getMessage());
+        }
+
         // Check if we should cancel other parallel tasks and get the gateway ID
         var cancellationInfo = getCancellationInfo(taskId);
         boolean cancelOthers = cancellationInfo.shouldCancel();
@@ -103,6 +130,21 @@ public class TaskController {
 
         workflowClient.completeTask(taskId, userId, userName, variables, cancelOthers, gatewayId);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Get outcome configuration for a task.
+     * Returns the configured options with their sets maps for the UI to
+     * render dynamic buttons.
+     */
+    @GetMapping("/{taskId}/outcome-config")
+    public ResponseEntity<java.util.Map<String, Object>> getOutcomeConfig(@PathVariable String taskId) {
+        log.debug("Getting outcome config for task: {}", taskId);
+        java.util.Map<String, Object> config = workflowClient.getOutcomeConfig(taskId);
+        if (config == null || config.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(config);
     }
 
     /**

@@ -1,28 +1,59 @@
 import React, { useState } from 'react';
-import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import {
-    UploadCloud, FileText, FileSpreadsheet, File, Eye, Download,
-    MoreHorizontal, CheckCircle, Clock
+    UploadCloud, FileText, FileSpreadsheet, File, Image as ImageIcon,
+    Download, Trash2, Loader2
 } from 'lucide-react';
-import { Badge } from './ui/badge';
-import FileUploader from './FileUploader'; // Reusing for logic, but might need custom UI
+import FileUploader from './FileUploader';
 import { MemoApi } from '../lib/api';
+import { toast } from 'sonner';
 
 export default function MemoAttachments({ memoId, attachments = [], onUpload, isEditable = false }) {
 
-    // Helper to determine icon based on file extension
+    const [downloading, setDownloading] = useState(null);
+    const [deleting, setDeleting] = useState(null);
+
+    const handleDownload = async (file) => {
+        setDownloading(file.id);
+        try {
+            await MemoApi.downloadAttachment(memoId, file.id, file.fileName);
+        } catch (error) {
+            console.error('Download failed', error);
+            toast.error('Failed to download file');
+        } finally {
+            setDownloading(null);
+        }
+    };
+
     const getFileIcon = (filename) => {
         const ext = filename.split('.').pop().toLowerCase();
         if (['pdf'].includes(ext)) return <FileText className="h-8 w-8 text-red-500" />;
         if (['xlsx', 'xls', 'csv'].includes(ext)) return <FileSpreadsheet className="h-8 w-8 text-green-600" />;
+        if (['doc', 'docx'].includes(ext)) return <FileText className="h-8 w-8 text-blue-500" />;
+        if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return <ImageIcon className="h-8 w-8 text-purple-500" />;
         return <File className="h-8 w-8 text-slate-400" />;
     };
 
-    // Helper for mock Process Stage (random assignment if not present)
-    const getProcessStage = (index) => {
-        const stages = ['Initial Review', 'Risk Assessment', 'Legal Review', 'Approved'];
-        return stages[index % stages.length];
+    const formatFileSize = (bytes) => {
+        if (!bytes) return '—';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    const handleDelete = async (file) => {
+        if (!window.confirm(`Delete "${file.fileName}"? This action cannot be undone.`)) return;
+        setDeleting(file.id);
+        try {
+            await MemoApi.deleteAttachment(memoId, file.id);
+            toast.success('Attachment deleted');
+            onUpload(); // Refresh list
+        } catch (error) {
+            console.error('Delete failed', error);
+            toast.error('Failed to delete attachment');
+        } finally {
+            setDeleting(null);
+        }
     };
 
     return (
@@ -44,7 +75,7 @@ export default function MemoAttachments({ memoId, attachments = [], onUpload, is
                                 />
                                 <span className="mx-1">or drag and drop files here.</span>
                             </div>
-                            <p className="text-xs text-slate-400 pt-2">Supported formats: PDF, XLSX, DOCX. Max file size: 25MB.</p>
+                            <p className="text-xs text-slate-400 pt-2">Supported formats: PDF, XLSX, DOCX, Images. Max file size: 25MB.</p>
                         </div>
                     </div>
                 </div>
@@ -57,9 +88,9 @@ export default function MemoAttachments({ memoId, attachments = [], onUpload, is
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
                             <th className="px-6 py-4">File Type</th>
                             <th className="px-6 py-4">Filename</th>
+                            <th className="px-6 py-4">Size</th>
                             <th className="px-6 py-4">Uploaded By</th>
                             <th className="px-6 py-4">Timestamp</th>
-                            <th className="px-6 py-4">Process Stage</th>
                             <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                     </thead>
@@ -69,7 +100,7 @@ export default function MemoAttachments({ memoId, attachments = [], onUpload, is
                                 <td colSpan="6" className="px-6 py-12 text-center text-slate-400 italic">No attachments found.</td>
                             </tr>
                         ) : (
-                            attachments.map((file, index) => (
+                            attachments.map((file) => (
                                 <tr key={file.id} className="hover:bg-slate-50/50 transition-colors group">
                                     <td className="px-6 py-4 text-center w-24">
                                         <div className="flex justify-center p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
@@ -78,27 +109,33 @@ export default function MemoAttachments({ memoId, attachments = [], onUpload, is
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="font-medium text-slate-900">{file.fileName}</div>
-                                        {/* <div className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB</div> */}
+                                    </td>
+                                    <td className="px-6 py-4 text-slate-500">
+                                        {formatFileSize(file.size)}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className="text-slate-700">Sarah Jenkins</span> {/* Mock Data */}
+                                        <span className="text-slate-700">{file.uploadedByName || 'Unknown'}</span>
                                     </td>
                                     <td className="px-6 py-4 text-slate-500">
                                         {new Date(file.createdAt || Date.now()).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-slate-700 font-medium">{getProcessStage(index)}</div>
-                                    </td>
                                     <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-3">
-                                            <a href={MemoApi.getAttachmentUrl(memoId, file.id)} target="_blank" rel="noreferrer" className="flex items-center text-slate-500 hover:text-brand-blue font-medium text-xs transition-colors">
-                                                <Download className="h-4 w-4 mr-1.5" />
-                                                Download
-                                            </a>
-                                            <button className="flex items-center text-slate-500 hover:text-brand-blue font-medium text-xs transition-colors">
-                                                <Eye className="h-4 w-4 mr-1.5" />
-                                                Preview
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => handleDownload(file)}
+                                                disabled={downloading === file.id}
+                                                className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors disabled:opacity-50">
+                                                {downloading === file.id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+                                                {downloading === file.id ? 'Downloading...' : 'Download'}
                                             </button>
+                                            {isEditable && (
+                                                <Button variant="ghost" size="icon"
+                                                    className="h-8 w-8 text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
+                                                    disabled={deleting === file.id}
+                                                    onClick={() => handleDelete(file)}>
+                                                    {deleting === file.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                                </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

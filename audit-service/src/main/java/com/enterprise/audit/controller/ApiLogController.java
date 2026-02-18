@@ -34,38 +34,45 @@ public class ApiLogController {
     public ResponseEntity<Void> ingest(@RequestBody ApiLogEvent event) {
         log.trace("Ingesting API log: {}", event.getLogId());
 
-        ApiLogEntity entity = ApiLogEntity.builder()
-                .logId(UUID.fromString(event.getLogId()))
-                .timestamp(event.getTimestamp() != null ? event.getTimestamp() : Instant.now())
-                .correlationId(event.getCorrelationId())
-                .traceId(event.getTraceId())
-                .serviceName(event.getServiceName())
-                .instanceId(event.getInstanceId())
-                .environment(event.getEnvironment())
-                .httpMethod(event.getHttpMethod())
-                .endpoint(event.getEndpoint())
-                .fullPath(event.getFullPath())
-                .queryParams(event.getQueryParams() != null ? event.getQueryParams().toString() : null)
-                .requestHeaders(event.getRequestHeaders() != null ? event.getRequestHeaders().toString() : null)
-                .requestBody(event.getRequestBody())
-                .clientIp(event.getClientIp())
-                .userAgent(event.getUserAgent())
-                .authenticatedUserId(event.getAuthenticatedUserId())
-                .userRole(event.getUserRole())
-                .responseStatus(event.getResponseStatus())
-                .responseTimeMs(event.getResponseTimeMs())
-                .responseBody(event.getResponseBody())
-                .errorCode(event.getErrorCode())
-                .errorMessage(event.getErrorMessage())
-                .exceptionClass(event.getExceptionClass())
-                .stackTrace(event.getStackTrace())
-                .upstreamService(event.getUpstreamService())
-                .downstreamService(event.getDownstreamService())
-                .externalApiCalled(event.getExternalApiCalled())
-                .retryCount(event.getRetryCount())
-                .build();
+        try {
+            ApiLogEntity entity = ApiLogEntity.builder()
+                    .timestamp(event.getTimestamp() != null ? event.getTimestamp() : Instant.now())
+                    .correlationId(event.getCorrelationId())
+                    .traceId(event.getTraceId())
+                    .serviceName(event.getServiceName())
+                    .instanceId(event.getInstanceId())
+                    .environment(event.getEnvironment())
+                    .httpMethod(event.getHttpMethod())
+                    .endpoint(event.getEndpoint())
+                    .fullPath(event.getFullPath())
+                    .fullPath(event.getFullPath())
+                    .queryParams(
+                            event.getQueryParams() != null ? new java.util.HashMap<>(event.getQueryParams()) : null)
+                    .requestHeaders(
+                            event.getRequestHeaders() != null ? new java.util.HashMap<>(event.getRequestHeaders())
+                                    : null)
+                    .requestBody(event.getRequestBody())
+                    .clientIp(event.getClientIp())
+                    .userAgent(event.getUserAgent())
+                    .authenticatedUserId(event.getAuthenticatedUserId())
+                    .userRole(event.getUserRole())
+                    .responseStatus(event.getResponseStatus())
+                    .responseTimeMs(event.getResponseTimeMs())
+                    .responseBody(event.getResponseBody())
+                    .errorCode(event.getErrorCode())
+                    .errorMessage(event.getErrorMessage())
+                    .exceptionClass(event.getExceptionClass())
+                    .stackTrace(event.getStackTrace())
+                    .upstreamService(event.getUpstreamService())
+                    .downstreamService(event.getDownstreamService())
+                    .externalApiCalled(event.getExternalApiCalled())
+                    .retryCount(event.getRetryCount())
+                    .build();
 
-        apiLogRepository.save(entity);
+            apiLogRepository.save(entity);
+        } catch (Exception e) {
+            log.warn("Failed to persist API log {}: {}", event.getLogId(), e.getMessage());
+        }
         return ResponseEntity.ok().build();
     }
 

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_LoanWorkflow"
+                  targetNamespace="http://example.com/loan">
+
+  <bpmn:process id="LoanApprovalProcess" name="Loan Approval Process" isExecutable="true">
+
+    <!-- Start Event -->
+    <bpmn:startEvent id="StartEvent_Application" name="Loan Application Submitted"/>
+    <bpmn:userTask id="Task_InitialReview" name="Initial Review by Officer"/>
+    
+    <!-- Exclusive Gateway -->
+    <bpmn:exclusiveGateway id="Gateway_CheckEligibility" name="Eligible?" default="Flow_NotEligible"/>
+    
+    <bpmn:userTask id="Task_RejectLoan" name="Reject Loan"/>
+    <bpmn:endEvent id="EndEvent_Rejected" name="Loan Rejected"/>
+    
+    <!-- Parallel Gateway Split -->
+    <bpmn:parallelGateway id="Gateway_Parallel_Split"/>
+    <bpmn:userTask id="Task_CreditCheck" name="Perform Credit Check"/>
+    <bpmn:userTask id="Task_BackgroundCheck" name="Perform Background Check"/>
+    <bpmn:parallelGateway id="Gateway_Parallel_Join"/>
+    
+    <!-- Inclusive Gateway Split -->
+    <bpmn:inclusiveGateway id="Gateway_Risk_Split"/>
+    <bpmn:userTask id="Task_RiskAssessment" name="Risk Assessment"/>
+    <bpmn:userTask id="Task_LegalReview" name="Legal Review"/>
+    <bpmn:inclusiveGateway id="Gateway_Risk_Join"/>
+    
+    <!-- Subprocess -->
+    <bpmn:subProcess id="SubProcess_Approval" name="Multi-Level Approval" triggeredByEvent="false">
+      <bpmn:startEvent id="SubStart"/>
+      <bpmn:userTask id="Task_ManagerApproval" name="Manager Approval"/>
+      <bpmn:userTask id="Task_HeadApproval" name="Head Approval"/>
+      <bpmn:exclusiveGateway id="Gateway_SubDecision" name="Approved?"/>
+      <bpmn:endEvent id="SubEndApproved" name="Approval Completed"/>
+      
+      <bpmn:sequenceFlow id="SubFlow1" sourceRef="SubStart" targetRef="Task_ManagerApproval"/>
+      <bpmn:sequenceFlow id="SubFlow2" sourceRef="Task_ManagerApproval" targetRef="Task_HeadApproval"/>
+      <bpmn:sequenceFlow id="SubFlow3" sourceRef="Task_HeadApproval" targetRef="Gateway_SubDecision"/>
+      
+      <!-- Loop-back -->
+      <bpmn:sequenceFlow id="SubFlowApproved" sourceRef="Gateway_SubDecision" targetRef="SubEndApproved">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${approved == true}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="SubFlowRework" sourceRef="Gateway_SubDecision" targetRef="Task_ManagerApproval">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${approved == false}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+    </bpmn:subProcess>
+    
+    <!-- Timer & Message -->
+    <bpmn:intermediateCatchEvent id="Timer_WaitForDocs" name="Wait for Documents">
+      <bpmn:timerEventDefinition/>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="Message_ReceiveDocs" name="Documents Received">
+      <bpmn:messageEventDefinition/>
+    </bpmn:intermediateCatchEvent>
+    
+    <!-- Final Disbursement -->
+    <bpmn:userTask id="Task_DisburseLoan" name="Disburse Loan"/>
+    <bpmn:endEvent id="EndEvent_Approved" name="Loan Approved"/>
+    
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow1" sourceRef="StartEvent_Application" targetRef="Task_InitialReview"/>
+    <bpmn:sequenceFlow id="Flow2" sourceRef="Task_InitialReview" targetRef="Gateway_CheckEligibility"/>
+    
+    <bpmn:sequenceFlow id="Flow_Eligible" sourceRef="Gateway_CheckEligibility" targetRef="Gateway_Parallel_Split">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${eligible == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_NotEligible" sourceRef="Gateway_CheckEligibility" targetRef="Task_RejectLoan"/>
+    <bpmn:sequenceFlow id="FlowRejectEnd" sourceRef="Task_RejectLoan" targetRef="EndEvent_Rejected"/>
+    
+    <!-- Parallel Flows -->
+    <bpmn:sequenceFlow id="FlowP1" sourceRef="Gateway_Parallel_Split" targetRef="Task_CreditCheck"/>
+    <bpmn:sequenceFlow id="FlowP2" sourceRef="Gateway_Parallel_Split" targetRef="Task_BackgroundCheck"/>
+    <bpmn:sequenceFlow id="FlowP3" sourceRef="Task_CreditCheck" targetRef="Gateway_Parallel_Join"/>
+    <bpmn:sequenceFlow id="FlowP4" sourceRef="Task_BackgroundCheck" targetRef="Gateway_Parallel_Join"/>
+    <bpmn:sequenceFlow id="FlowAfterParallel" sourceRef="Gateway_Parallel_Join" targetRef="Gateway_Risk_Split"/>
+    
+    <!-- Inclusive Flows -->
+    <bpmn:sequenceFlow id="FlowRisk" sourceRef="Gateway_Risk_Split" targetRef="Task_RiskAssessment">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${riskRequired == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="FlowLegal" sourceRef="Gateway_Risk_Split" targetRef="Task_LegalReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${legalRequired == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="FlowRiskJoin1" sourceRef="Task_RiskAssessment" targetRef="Gateway_Risk_Join"/>
+    <bpmn:sequenceFlow id="FlowRiskJoin2" sourceRef="Task_LegalReview" targetRef="Gateway_Risk_Join"/>
+    
+    <bpmn:sequenceFlow id="FlowToSubProcess" sourceRef="Gateway_Risk_Join" targetRef="SubProcess_Approval"/>
+    <bpmn:sequenceFlow id="FlowTimer" sourceRef="SubProcess_Approval" targetRef="Timer_WaitForDocs"/>
+    <bpmn:sequenceFlow id="FlowMessage" sourceRef="Timer_WaitForDocs" targetRef="Message_ReceiveDocs"/>
+    <bpmn:sequenceFlow id="FlowToDisburse" sourceRef="Message_ReceiveDocs" targetRef="Task_DisburseLoan"/>
+    <bpmn:sequenceFlow id="FlowEnd" sourceRef="Task_DisburseLoan" targetRef="EndEvent_Approved"/>
+    
+  </bpmn:process>
+  
+  <!-- BPMN Diagram Interchange -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_LoanWorkflow">
+    <bpmndi:BPMNPlane id="BPMNPlane_LoanWorkflow" bpmnElement="LoanApprovalProcess">
+      
+      <!-- Start Event -->
+      <bpmndi:BPMNShape id="StartEvent_Application_di" bpmnElement="StartEvent_Application">
+        <dc:Bounds x="100" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- User Tasks -->
+      <bpmndi:BPMNShape id="Task_InitialReview_di" bpmnElement="Task_InitialReview">
+        <dc:Bounds x="200" y="90" width="100" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RejectLoan_di" bpmnElement="Task_RejectLoan">
+        <dc:Bounds x="450" y="50" width="100" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CreditCheck_di" bpmnElement="Task_CreditCheck">
+        <dc:Bounds x="350" y="200" width="100" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BackgroundCheck_di" bpmnElement="Task_BackgroundCheck">
+        <dc:Bounds x="350" y="300" width="100" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RiskAssessment_di" bpmnElement="Task_RiskAssessment">
+        <dc:Bounds x="500" y="200" width="120" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_LegalReview_di" bpmnElement="Task_LegalReview">
+        <dc:Bounds x="500" y="300" width="120" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_DisburseLoan_di" bpmnElement="Task_DisburseLoan">
+        <dc:Bounds x="800" y="250" width="120" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Gateways -->
+      <bpmndi:BPMNShape id="Gateway_CheckEligibility_di" bpmnElement="Gateway_CheckEligibility" isMarkerVisible="true">
+        <dc:Bounds x="320" y="100" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Parallel_Split_di" bpmnElement="Gateway_Parallel_Split" isMarkerVisible="true">
+        <dc:Bounds x="300" y="250" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Parallel_Join_di" bpmnElement="Gateway_Parallel_Join" isMarkerVisible="true">
+        <dc:Bounds x="500" y="250" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Risk_Split_di" bpmnElement="Gateway_Risk_Split" isMarkerVisible="true">
+        <dc:Bounds x="650" y="250" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Risk_Join_di" bpmnElement="Gateway_Risk_Join" isMarkerVisible="true">
+        <dc:Bounds x="750" y="250" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Subprocess -->
+      <bpmndi:BPMNShape id="SubProcess_Approval_di" bpmnElement="SubProcess_Approval" isExpanded="true">
+        <dc:Bounds x="650" y="350" width="250" height="150"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- End Events -->
+      <bpmndi:BPMNShape id="EndEvent_Approved_di" bpmnElement="EndEvent_Approved">
+        <dc:Bounds x="950" y="250" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
+        <dc:Bounds x="600" y="50" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      
+      <!-- Sequence Flows -->
+      <bpmndi:BPMNEdge id="Flow1_di" bpmnElement="Flow1">
+        <di:waypoint x="136" y="118" />
+        <di:waypoint x="200" y="115" />
+      </bpmndi:BPMNEdge>
+      
+      <bpmndi:BPMNEdge id="Flow2_di" bpmnElement="Flow2">
+        <di:waypoint x="300" y="115" />
+        <di:waypoint x="320" y="125" />
+      </bpmndi:BPMNEdge>
+      
+      <!-- Additional edges auto-generated by bpmn.io on import -->
+      
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>
+

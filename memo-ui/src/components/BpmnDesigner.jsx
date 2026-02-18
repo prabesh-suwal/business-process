@@ -66,6 +66,12 @@ const BpmnDesigner = forwardRef(function BpmnDesigner({
     const [error, setError] = useState(null);
     const [isModelerReady, setIsModelerReady] = useState(false);
     const isImportingRef = useRef(false);
+    // Track whether the initial XML has been loaded (only import once)
+    const hasLoadedRef = useRef(false);
+    // Keep a ref to initialXml so we can read the latest value without re-triggering effects
+    const initialXmlRef = useRef(initialXml);
+    // Ref to suppress selection changes during property updates (prevents panel from closing)
+    const suppressSelectionRef = useRef(false);
 
     // Track assignment configs for each task
     const [taskAssignments, setTaskAssignments] = useState({});
@@ -87,6 +93,8 @@ const BpmnDesigner = forwardRef(function BpmnDesigner({
 
         // Listen for selection changes
         modeler.on('selection.changed', (e) => {
+            // Skip if we're suppressing selection changes (e.g. during property updates from PropertyPanel)
+            if (suppressSelectionRef.current) return;
             const element = e.newSelection[0];
             setSelectedElement(element || null);
             if (onElementClick) {
@@ -94,7 +102,8 @@ const BpmnDesigner = forwardRef(function BpmnDesigner({
             }
         });
 
-        // Listen for changes
+        // Listen for changes — always export XML, even during property updates from PropertyPanel
+        // (suppression only applies to selection.changed to prevent panel from closing)
         modeler.on('commandStack.changed', async () => {
             if (onXmlChange) {
                 try {
@@ -121,6 +130,10 @@ const BpmnDesigner = forwardRef(function BpmnDesigner({
         getModdle: () => modelerRef.current?.get('moddle'),
         getElementRegistry: () => modelerRef.current?.get('elementRegistry'),
         getCanvas: () => modelerRef.current?.get('canvas'),
+        // Suppress selection changes during property updates (call before modeling.updateProperties)
+        suppressSelection: () => { suppressSelectionRef.current = true; },
+        // Resume selection changes (call after modeling.updateProperties)
+        resumeSelection: () => { suppressSelectionRef.current = false; },
         importXML: async (xml) => {
             if (!modelerRef.current) throw new Error('Modeler not ready');
             isImportingRef.current = true;
@@ -135,18 +148,27 @@ const BpmnDesigner = forwardRef(function BpmnDesigner({
         },
     }), []);
 
-    // Load diagram when modeler is ready or initialXml changes
+    // Keep the ref in sync with the prop (but don't trigger re-imports)
+    useEffect(() => {
+        initialXmlRef.current = initialXml;
+    }, [initialXml]);
+
+    // Load diagram ONCE when modeler is ready
+    // We intentionally do NOT depend on initialXml — after the first load,
+    // the modeler manages its own state. Changes flow through
+    // modeling.updateProperties → commandStack.changed → saveXML export.
     useEffect(() => {
         if (!isModelerReady || !modelerRef.current) return;
-        if (isImportingRef.current) return;
+        if (hasLoadedRef.current) return; // Already loaded, don't re-import
 
         const loadDiagram = async () => {
             try {
+                hasLoadedRef.current = true;
                 isImportingRef.current = true;
                 setIsLoading(true);
                 setError(null);
 
-                const xmlToLoad = initialXml || DEFAULT_BPMN;
+                const xmlToLoad = initialXmlRef.current || DEFAULT_BPMN;
                 await modelerRef.current.importXML(xmlToLoad);
 
                 // Extract existing assignment configs from extensionElements
@@ -166,7 +188,7 @@ const BpmnDesigner = forwardRef(function BpmnDesigner({
         };
 
         loadDiagram();
-    }, [isModelerReady, initialXml]);
+    }, [isModelerReady]);
 
     // Extract assignment configs from BPMN extensionElements
     const extractAssignmentConfigs = () => {

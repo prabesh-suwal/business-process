@@ -1,0 +1,73 @@
+# ==============================================================================
+# MEMO PRODUCT — Docker Compose Overlay
+# ==============================================================================
+# Usage: docker compose -f docker-compose.memo.yml up -d
+# ==============================================================================
+
+include:
+  - docker-compose.base.yml
+
+services:
+  memo-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/memo-service:${TAG:-latest}
+    container_name: memo-service
+    restart: unless-stopped
+    ports:
+      - "9008:9008"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      cas-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - app-network
+
+  gateway-product:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/gateway-product:${TAG:-latest}
+    container_name: gateway-product
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      CONSUL_HOST: consul
+      CAS_ISSUER: ${CAS_ISSUER:-http://cas-server:9000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      cas-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  memo-ui:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/memo-ui:${TAG:-latest}
+    container_name: memo-ui
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    networks:
+      - app-network

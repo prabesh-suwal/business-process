@@ -1,0 +1,166 @@
+# ======================================================================
+# ADMIN GATEWAY — PRODUCTION PROFILE
+# ======================================================================
+
+spring:
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:consul}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        prefer-ip-address: true
+        ip-address: ${HOST_IP:admin-gateway}
+  
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            corsConfigurations:
+              '[/**]':
+                allowedOrigins:
+                  - ${CORS_ORIGIN_ADMIN_UI:http://localhost:3002}
+
+          routes:
+            - id: auth-routes
+              uri: http://cas-server:9000
+              predicates:
+                - Path=/auth/**
+              filters:
+                - name: CookiePropagation
+
+            - id: cas-admin
+              uri: http://cas-server:9000
+              predicates:
+                - Path=/admin/**
+
+            - id: policy-engine
+              uri: http://policy-engine-service:9001
+              predicates:
+                - Path=/policies,/policies/**
+              filters:
+                - RewritePath=/policies(?<segment>/?.*), /api/policies${segment}
+
+            - id: policy-evaluate
+              uri: http://policy-engine-service:9001
+              predicates:
+                - Path=/evaluate/**
+              filters:
+                - RewritePath=/evaluate/(?<segment>.*), /api/evaluate/${segment}
+
+            - id: organization-geo
+              uri: http://organization-service:9003
+              predicates:
+                - Path=/org/geo/**
+              filters:
+                - RewritePath=/org/geo/(?<segment>.*), /api/geo/${segment}
+
+            - id: organization-branches
+              uri: http://organization-service:9003
+              predicates:
+                - Path=/org/branches,/org/branches/**
+              filters:
+                - RewritePath=/org/branches(?<segment>/?.*), /api/branches${segment}
+
+            - id: organization-departments
+              uri: http://organization-service:9003
+              predicates:
+                - Path=/org/departments,/org/departments/**
+              filters:
+                - RewritePath=/org/departments(?<segment>/?.*), /api/departments${segment}
+
+            - id: organization-groups
+              uri: http://organization-service:9003
+              predicates:
+                - Path=/org/groups,/org/groups/**
+              filters:
+                - RewritePath=/org/groups(?<segment>/?.*), /api/groups${segment}
+
+            - id: workflow-templates
+              uri: http://workflow-service:9002
+              predicates:
+                - Path=/workflow/templates,/workflow/templates/**
+              filters:
+                - RewritePath=/workflow/templates(?<segment>/?.*), /api/process-templates${segment}
+
+            - id: workflow-instances
+              uri: http://workflow-service:9002
+              predicates:
+                - Path=/workflow/instances,/workflow/instances/**
+              filters:
+                - RewritePath=/workflow/instances(?<segment>/?.*), /api/process-instances${segment}
+
+            - id: workflow-tasks
+              uri: http://workflow-service:9002
+              predicates:
+                - Path=/workflow/tasks,/workflow/tasks/**
+              filters:
+                - RewritePath=/workflow/tasks(?<segment>/?.*), /api/tasks${segment}
+
+            - id: workflow-history
+              uri: http://workflow-service:9002
+              predicates:
+                - Path=/workflow/history,/workflow/history/**
+              filters:
+                - RewritePath=/workflow/history(?<segment>/?.*), /api/history${segment}
+
+            - id: workflow-configs
+              uri: http://workflow-service:9002
+              predicates:
+                - Path=/workflow/workflow-configs,/workflow/workflow-configs/**
+              filters:
+                - RewritePath=/workflow/workflow-configs(?<segment>/?.*), /api/workflow-configs${segment}
+
+            - id: workflow-dmn
+              uri: http://workflow-service:9002
+              predicates:
+                - Path=/workflow/dmn,/workflow/dmn/**
+              filters:
+                - RewritePath=/workflow/dmn(?<segment>/?.*), /api/dmn${segment}
+
+            - id: form-definitions
+              uri: http://form-service:9006
+              predicates:
+                - Path=/forms/definitions,/forms/definitions/**
+              filters:
+                - RewritePath=/forms/definitions(?<segment>/?.*), /api/forms${segment}
+
+            - id: form-submissions
+              uri: http://form-service:9006
+              predicates:
+                - Path=/forms/submissions,/forms/submissions/**
+              filters:
+                - RewritePath=/forms/submissions(?<segment>/?.*), /api/submissions${segment}
+
+            - id: audit-events
+              uri: http://audit-service:9009
+              predicates:
+                - Path=/audit,/audit/**
+              filters:
+                - RewritePath=/audit(?<segment>/?.*), /api/audit-events${segment}
+
+            - id: jwks
+              uri: http://cas-server:9000
+              predicates:
+                - Path=/.well-known/**
+
+cas:
+  jwks-url: http://cas-server:9000/.well-known/jwks.json
+  issuer: ${CAS_ISSUER:http://cas-server:9000}
+
+logging:
+  level:
+    com.cas: INFO
+    org.springframework.cloud.gateway: WARN
+
+services:
+  workflow-service:
+    url: http://workflow-service:9002
+  form-service:
+    url: http://form-service:9006
+  cas-server:
+    url: http://cas-server:9000
+  document-service:
+    url: http://document-service:9010
+  audit-service:
+    url: http://audit-service:9009
+    enabled: true

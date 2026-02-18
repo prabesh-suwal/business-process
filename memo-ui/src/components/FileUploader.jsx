@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { Button } from './ui/button';
-import { Upload, X, File, Paperclip, Loader2 } from 'lucide-react';
+import { Paperclip, Loader2 } from 'lucide-react';
 import { MemoApi } from '../lib/api';
+import { toast } from 'sonner';
 
-export default function FileUploader({ memoId, onUploadComplete }) {
+export default function FileUploader({ memoId, onUploadComplete, customTrigger }) {
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef(null);
 
@@ -14,10 +15,11 @@ export default function FileUploader({ memoId, onUploadComplete }) {
         setUploading(true);
         try {
             await MemoApi.uploadAttachment(memoId, file);
+            toast.success(`Uploaded: ${file.name}`);
             onUploadComplete();
         } catch (error) {
             console.error("Upload failed", error);
-            alert("Upload failed");
+            toast.error("Upload failed");
         } finally {
             setUploading(false);
             if (fileInputRef.current) {
@@ -27,22 +29,28 @@ export default function FileUploader({ memoId, onUploadComplete }) {
     };
 
     return (
-        <div>
+        <>
             <input
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
                 onChange={handleFileChange}
             />
-            <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-            >
-                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Paperclip className="mr-2 h-4 w-4" />}
-                Attach File
-            </Button>
-        </div>
+            {customTrigger ? (
+                <span onClick={() => !uploading && fileInputRef.current?.click()} className="inline-block">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : customTrigger}
+                </span>
+            ) : (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                >
+                    {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Paperclip className="mr-2 h-4 w-4" />}
+                    Attach File
+                </Button>
+            )}
+        </>
     );
 }

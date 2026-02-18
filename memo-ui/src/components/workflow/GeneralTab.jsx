@@ -32,17 +32,21 @@ export default function GeneralTab({ element, modelerRef }) {
     const handleNameChange = useCallback((value) => {
         if (!element || !modelerRef?.current) return;
         try {
+            modelerRef.current.suppressSelection?.();
             const modeler = modelerRef.current.getModeler ? modelerRef.current.getModeler() : modelerRef.current;
             const modeling = modeler.get('modeling');
             modeling.updateProperties(element, { name: value });
         } catch (err) {
             console.error('Error updating name:', err);
+        } finally {
+            setTimeout(() => modelerRef.current?.resumeSelection?.(), 50);
         }
     }, [element, modelerRef]);
 
     const handleDocChange = useCallback((value) => {
         if (!element || !modelerRef?.current) return;
         try {
+            modelerRef.current.suppressSelection?.();
             const modeler = modelerRef.current.getModeler ? modelerRef.current.getModeler() : modelerRef.current;
             const modeling = modeler.get('modeling');
             const moddle = modeler.get('moddle');
@@ -55,6 +59,8 @@ export default function GeneralTab({ element, modelerRef }) {
             }
         } catch (err) {
             console.error('Error updating documentation:', err);
+        } finally {
+            setTimeout(() => modelerRef.current?.resumeSelection?.(), 50);
         }
     }, [element, modelerRef]);
 

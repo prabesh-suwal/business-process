@@ -1,5 +1,6 @@
 package com.enterprise.memo.client;
 
+import com.cas.common.webclient.InternalWebClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +18,7 @@ import java.util.Map;
 @Slf4j
 public class CasClient {
 
+    @InternalWebClient
     private final WebClient.Builder webClientBuilder;
 
     @Value("${cas.service.url:http://localhost:9000}")

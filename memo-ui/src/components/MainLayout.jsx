@@ -18,7 +18,8 @@ import {
     Inbox,
     FolderOpen,
     GitBranch,
-    Sparkles
+    Sparkles,
+    Table2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -109,6 +110,7 @@ export default function MainLayout() {
 
                     <div className="px-5 pb-3 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Analytics</div>
                     <SidebarItem to="/reports" icon={BarChart3} label="Reports" badge="New" />
+                    <SidebarItem to="/dmn" icon={Table2} label="Decision Tables" />
                 </div>
 
                 {/* User Profile (Bottom) */}

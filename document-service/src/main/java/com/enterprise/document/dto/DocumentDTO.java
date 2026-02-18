@@ -27,4 +27,5 @@ public class DocumentDTO {
     private UUID uploadedBy;
     private String uploadedByName;
     private LocalDateTime uploadedAt;
+    private String downloadUrl;
 }

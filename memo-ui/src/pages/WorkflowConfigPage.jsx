@@ -917,36 +917,14 @@ const BranchingTab = ({ config, onChange, topicId, allSteps, currentStepKey }) =
     };
 
     return (
-        <div className="space-y-4">
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
-                <div className="flex items-start gap-3">
-                    <GitBranch className="w-5 h-5 text-purple-600 mt-0.5" />
-                    <div>
-                        <h4 className="font-medium text-purple-900">Conditional Routing</h4>
-                        <p className="text-sm text-purple-700">
-                            Define conditions to route memos to different steps based on their data.
-                            If no conditions match, the default step will be used.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <ConditionBuilder
-                topicId={topicId}
-                conditions={config?.conditions || []}
-                defaultTarget={config?.defaultTarget || ''}
-                availableSteps={availableTargetSteps}
-                onChange={handleConditionsChange}
-                label="Route After This Step"
-            />
-
-            {config?.conditions?.length === 0 && (
-                <div className="text-center py-4 text-gray-500 text-sm">
-                    <p>No conditions defined. The workflow will follow the default sequence.</p>
-                    <p className="mt-1">Add conditions above to create branching logic.</p>
-                </div>
-            )}
-        </div>
+        <ConditionBuilder
+            topicId={topicId}
+            conditions={config?.conditions || []}
+            defaultTarget={config?.defaultTarget || ''}
+            availableSteps={availableTargetSteps}
+            onChange={handleConditionsChange}
+            label="Route After This Step"
+        />
     );
 };
 

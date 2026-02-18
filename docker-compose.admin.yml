@@ -1,0 +1,47 @@
+# ==============================================================================
+# ADMIN PRODUCT — Docker Compose Overlay
+# ==============================================================================
+# Usage: docker compose -f docker-compose.admin.yml up -d
+# ==============================================================================
+
+include:
+  - docker-compose.base.yml
+
+services:
+  admin-gateway:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/admin-gateway:${TAG:-latest}
+    container_name: admin-gateway
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CAS_ISSUER: ${CAS_ISSUER:-http://cas-server:9000}
+      CORS_ORIGIN_ADMIN_UI: ${CORS_ORIGIN_ADMIN_UI:-http://localhost:3002}
+      # SPRING_CLOUD_CONSUL_ENABLED: true
+      # SPRING_CLOUD_CONSUL_HOST: consul
+      # SPRING_CLOUD_CONSUL_PORT: 8500
+      # SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: true
+      CONSUL_HOST: consul
+    depends_on:
+      cas-server:
+        condition: service_started
+      consul:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  cas-admin-ui:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/cas-admin-ui:${TAG:-latest}
+    container_name: cas-admin-ui
+    restart: unless-stopped
+    ports:
+      - "3002:80"
+    networks:
+      - app-network

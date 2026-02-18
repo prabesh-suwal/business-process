@@ -5,10 +5,10 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.0</version>
-        <relativePath/>
+        <groupId>com.cas</groupId>
+        <artifactId>cas-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../cas-parent</relativePath>
     </parent>
 
     <groupId>com.enterprise</groupId>
@@ -16,23 +16,6 @@
     <version>1.0.0-SNAPSHOT</version>
     <name>Organization Service</name>
     <description>Enterprise Organization Management - Branches, Departments, Groups, Geographical Hierarchy</description>
-
-    <properties>
-        <java.version>21</java.version>
-        <spring-cloud.version>2023.0.0</spring-cloud.version>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.springframework.cloud</groupId>
-                <artifactId>spring-cloud-dependencies</artifactId>
-                <version>${spring-cloud.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Spring Boot Starters -->
@@ -67,7 +50,6 @@
         <dependency>
             <groupId>com.cas</groupId>
             <artifactId>cas-common</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
         </dependency>
 
         <!-- PostgreSQL -->
@@ -77,29 +59,21 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Flyway -->
+        <!-- Flyway (Spring Boot 4 starter) -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
-            <version>10.10.0</version>
         </dependency>
 
-        <!-- JSON for PostgreSQL -->
+        <!-- JSON for PostgreSQL (Hibernate 7.x for Spring Boot 4.x) -->
         <dependency>
             <groupId>io.hypersistence</groupId>
-            <artifactId>hypersistence-utils-hibernate-63</artifactId>
-            <version>3.7.0</version>
-        </dependency>
-
-        <!-- Lombok -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <artifactId>hypersistence-utils-hibernate-70</artifactId>
+            <version>3.15.2</version>
         </dependency>
 
         <!-- Test -->
@@ -115,14 +89,10 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

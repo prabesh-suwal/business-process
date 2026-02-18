@@ -131,6 +131,13 @@ spring:
               filters:
                 - RewritePath=/workflow/workflow-configs(?<segment>/?.*), /api/workflow-configs${segment}
 
+            - id: workflow-dmn
+              uri: http://localhost:9002
+              predicates:
+                - Path=/workflow/dmn,/workflow/dmn/**
+              filters:
+                - RewritePath=/workflow/dmn(?<segment>/?.*), /api/dmn${segment}
+
             # Form Service routes
             - id: form-definitions
               uri: http://localhost:9006

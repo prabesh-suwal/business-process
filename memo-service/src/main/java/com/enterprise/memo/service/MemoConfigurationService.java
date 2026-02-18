@@ -209,7 +209,7 @@ public class MemoConfigurationService {
                                 .name("memo.priority").label("Priority").type("enum").source("memo")
                                 .options(List.of("LOW", "MEDIUM", "HIGH", "URGENT")).build());
                 variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
-                                .name("memo.dueDate").label("Due Date").type("date").source("memo").build());
+                                .name("memo.dueDate").label(" ").type("date").source("memo").build());
                 variables.add(com.enterprise.memo.dto.WorkflowVariable.builder()
                                 .name("memo.attachmentCount").label("Number of Attachments").type("number")
                                 .source("memo").build());

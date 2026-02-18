@@ -102,6 +102,7 @@ public class Document {
         CUSTOMER,
         PROCESS_INSTANCE,
         FORM_SUBMISSION,
+        MEMO,
         OTHER
     }
 

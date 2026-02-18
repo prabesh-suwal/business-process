@@ -41,17 +41,6 @@ public class AuditServletAutoConfiguration {
     }
 
     /**
-     * Fallback WebClient.Builder for servlet environments.
-     * Spring Boot only auto-configures this bean in reactive (WebFlux) apps.
-     */
-    @Bean
-    @ConditionalOnMissingBean(WebClient.Builder.class)
-    @ConditionalOnClass(WebClient.class)
-    public WebClient.Builder webClientBuilder() {
-        return WebClient.builder();
-    }
-
-    /**
      * HTTP-based audit event publisher using WebClient.
      * Publishes structured audit events to the centralized audit service.
      */
