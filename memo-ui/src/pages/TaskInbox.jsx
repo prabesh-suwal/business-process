@@ -153,15 +153,15 @@ export default function TaskInbox() {
                                         onClick={() => viewMemo(task)}
                                     >
                                         <TableCell className="font-mono text-xs font-bold text-slate-900">
-                                            {task.businessKey || '-'}
+                                            {task.memoNumber || task.businessKey || '-'}
                                         </TableCell>
                                         <TableCell>
                                             <div className="font-semibold text-slate-900 leading-snug group-hover:text-blue-700 transition-colors">
-                                                {task.name || task.processTemplateName}
+                                                {task.subject || task.name || task.processTemplateName}
                                             </div>
                                             <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
                                                 <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-600 font-medium">
-                                                    {task.category || 'Memo'}
+                                                    {task.topicName || task.category || 'Memo'}
                                                 </span>
                                                 {/* Parallel workflow indicator */}
                                                 {task.isParallelExecution && (

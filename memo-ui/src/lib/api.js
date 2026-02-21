@@ -368,6 +368,9 @@ export const TaskApi = {
     getReturnPoints: (taskId) => api.get(`/memo/api/tasks/${taskId}/return-points`).then(res => res.data),
     sendBackTask: (taskId, targetActivityId, reason) => api.post(`/memo/api/tasks/${taskId}/send-back`, { targetActivityId, reason }).then(res => res.data),
 
+    // Movement history (history-based back navigation)
+    getMovementHistory: (taskId) => api.get(`/memo/api/tasks/${taskId}/movement-history`).then(res => res.data).catch(() => null),
+
     // ==================== PARALLEL EXECUTION TRACKING ====================
 
     // Get parallel execution status for a process (shows "2 of 3 branches completed")
@@ -385,12 +388,18 @@ export const TaskApi = {
     // Get active executions (tokens) in a process for visualization
     getActiveExecutions: (processInstanceId) =>
         api.get(`/workflow/api/tasks/executions/${processInstanceId}`).then(res => res.data),
+
+    // Delegate candidates — returns candidate groups and users for a task
+    getDelegateCandidates: (taskId) =>
+        api.get(`/memo/api/tasks/${taskId}/delegate-candidates`).then(res => res.data).catch(() => ({ candidateGroups: [], candidateUsers: [] })),
+
+    // Get users by role codes (for delegate user picker)
+    getUsersByRoles: (roles) =>
+        api.get(`/cas-admin/workflow-config/users-by-roles?roles=${roles.join(',')}`).then(res => res.data).catch(() => []),
 };
 
 export const HistoryApi = {
-    getTimeline: (processInstanceId) => api.get(`/workflow/api/history/timeline/${processInstanceId}`).then(res => res.data),
-    getTimelineByType: (processInstanceId, type) => api.get(`/workflow/api/history/timeline/${processInstanceId}/by-type?actionType=${type}`).then(res => res.data),
-    getVariableHistory: (processInstanceId) => api.get(`/workflow/api/history/variables/${processInstanceId}`).then(res => res.data),
+    getTimeline: (memoId) => api.get(`/memo/api/memos/${memoId}/history`).then(res => res.data),
 };
 
 /**
@@ -471,6 +480,9 @@ export const WorkflowConfigApi = {
     getTaskConfigs: (processTemplateId) => api.get(`/workflow/api/process-templates/${processTemplateId}/task-configs`).then(res => res.data),
     getTaskConfig: (processTemplateId, taskKey) => api.get(`/workflow/api/process-templates/${processTemplateId}/task-configs/${taskKey}`).then(res => res.data),
     saveTaskConfig: (processTemplateId, taskKey, config) => api.put(`/workflow/api/process-templates/${processTemplateId}/task-configs/${taskKey}`, config).then(res => res.data),
+
+    // Predefined action types for outcome configuration
+    getActionTypes: () => api.get('/workflow/api/tasks/action-types').then(res => res.data),
 
     // Gateway decision rules
     getGatewayRules: (topicId) => api.get(`/memo-admin/topics/${topicId}/workflow-config/gateways`).then(res => res.data),

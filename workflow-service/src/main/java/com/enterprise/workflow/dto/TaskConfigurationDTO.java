@@ -58,6 +58,9 @@ public class TaskConfigurationDTO {
     // Condition config (branching/routing conditions)
     private Map<String, Object> conditionConfig;
 
+    // Outcome config (action buttons / decision routing)
+    private Map<String, Object> outcomeConfig;
+
     // Step order for display
     private Integer stepOrder;
 

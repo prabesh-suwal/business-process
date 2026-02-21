@@ -43,10 +43,8 @@ spring:
 
   # Jackson JSON
   jackson:
-    serialization:
-      write-dates-as-timestamps: false
     deserialization:
-      fail-on-unknown-properties: false
+      FAIL_ON_UNKNOWN_PROPERTIES: false
 
 # Server Configuration
 server:

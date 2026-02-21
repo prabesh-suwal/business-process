@@ -28,4 +28,13 @@ public class TimelineEventDTO {
 
     // Human-readable action description
     private String description;
+
+    // The decision/action label (e.g., "Approved", "Sent Back", "Rejected")
+    private String actionLabel;
+
+    // Duration this step took in milliseconds (from task creation to completion)
+    private Long durationMs;
+
+    // What step(s) the workflow moved to after this event
+    private List<String> nextSteps;
 }

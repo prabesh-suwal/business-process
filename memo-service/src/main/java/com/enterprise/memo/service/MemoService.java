@@ -52,6 +52,7 @@ public class MemoService {
         dto.setCreatedBy(memo.getCreatedBy());
         dto.setCreatedAt(memo.getCreatedAt());
         dto.setUpdatedAt(memo.getUpdatedAt());
+        dto.setProcessInstanceId(memo.getProcessInstanceId());
         return dto;
     }
 
@@ -233,7 +234,9 @@ public class MemoService {
                     .variables(variables)
                     .build();
 
-            workflowClient.startProcess(request, userId);
+            String processInstanceId = workflowClient.startProcess(request, userId);
+            memo.setProcessInstanceId(processInstanceId);
+            log.info("Workflow started for memo {}, processInstanceId: {}", id, processInstanceId);
 
         } catch (Exception e) {
             log.error("Failed to start workflow for memo {}: {}", id, e.getMessage());
@@ -333,7 +336,8 @@ public class MemoService {
                     .variables(variables)
                     .build();
 
-            workflowClient.startProcess(request, userId);
+            String processInstanceId = workflowClient.startProcess(request, userId);
+            memo.setProcessInstanceId(processInstanceId);
 
             log.info("Dynamic workflow started for memo {}", memo.getId());
 

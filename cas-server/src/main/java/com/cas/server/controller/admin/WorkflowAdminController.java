@@ -104,6 +104,45 @@ public class WorkflowAdminController {
         }
 
         /**
+         * Get users by role codes (for delegate user picker).
+         * Accepts comma-separated role codes and returns users who have any of those
+         * roles.
+         */
+        @GetMapping("/users-by-roles")
+        public ResponseEntity<List<DropdownItem>> getUsersByRoles(
+                        @RequestParam String roles,
+                        @RequestParam(defaultValue = "MMS") String productCode) {
+                var roleCodes = java.util.Arrays.stream(roles.split(","))
+                                .map(String::trim)
+                                .filter(s -> !s.isEmpty())
+                                .toList();
+
+                if (roleCodes.isEmpty()) {
+                        return ResponseEntity.ok(List.of());
+                }
+
+                var users = adminService.listUsersByRoleCodes(productCode, roleCodes);
+                var items = users.stream()
+                                .map(u -> {
+                                        String fullName = "";
+                                        if (u.getFirstName() != null)
+                                                fullName += u.getFirstName();
+                                        if (u.getLastName() != null)
+                                                fullName += (fullName.isEmpty() ? "" : " ") + u.getLastName();
+                                        if (fullName.isEmpty())
+                                                fullName = u.getUsername();
+                                        return DropdownItem.builder()
+                                                        .id(u.getId().toString())
+                                                        .code(u.getUsername())
+                                                        .label(fullName)
+                                                        .build();
+                                })
+                                .distinct()
+                                .toList();
+                return ResponseEntity.ok(items);
+        }
+
+        /**
          * Get organizational scopes (for WHERE selector).
          * These are static business scopes.
          */

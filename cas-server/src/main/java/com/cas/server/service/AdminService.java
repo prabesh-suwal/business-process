@@ -69,6 +69,25 @@ public class AdminService {
         return result;
     }
 
+    /**
+     * Get users by role codes (for delegate user picker).
+     * Returns active users who have any role matching the given codes.
+     */
+    @Transactional(readOnly = true)
+    public List<UserDto> listUsersByRoleCodes(String productCode, List<String> roleCodes) {
+        List<User> users = userRepository.findByStatus(User.UserStatus.ACTIVE);
+
+        List<UserDto> result = users.stream()
+                .filter(u -> u.getUserRoles().stream()
+                        .anyMatch(ur -> ur.getRole().getProduct().getCode().equals(productCode)
+                                && roleCodes.contains(ur.getRole().getCode())))
+                .map(this::toUserDto)
+                .collect(Collectors.toList());
+
+        log.debug("Found {} users with roles {} for product {}", result.size(), roleCodes, productCode);
+        return result;
+    }
+
     @Transactional(readOnly = true)
     public UserDto getUser(UUID id) {
         User user = userRepository.findById(id)

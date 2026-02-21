@@ -354,6 +354,42 @@ public class MemoConfigurationService {
                         stepConfigsSnapshot.put(config.getTaskKey(), configMap);
                 }
 
+                // Merge outcomeConfig from workflow-service task configurations
+                if (topic.getWorkflowTemplateId() != null) {
+                        try {
+                                java.util.List<java.util.Map<String, Object>> taskConfigs = workflowClient
+                                                .getTaskConfigsForTemplate(topic.getWorkflowTemplateId());
+                                for (java.util.Map<String, Object> tc : taskConfigs) {
+                                        String taskKey = (String) tc.get("taskKey");
+                                        // Read from dedicated outcomeConfig field (new) or legacy config.outcomeConfig
+                                        @SuppressWarnings("unchecked")
+                                        java.util.Map<String, Object> outcomeConfig = (java.util.Map<String, Object>) tc
+                                                        .get("outcomeConfig");
+                                        if (outcomeConfig == null) {
+                                                // Fallback: check legacy config map
+                                                @SuppressWarnings("unchecked")
+                                                java.util.Map<String, Object> tcConfig = (java.util.Map<String, Object>) tc
+                                                                .get("config");
+                                                if (tcConfig != null && tcConfig.containsKey("outcomeConfig")) {
+                                                        @SuppressWarnings("unchecked")
+                                                        java.util.Map<String, Object> legacyOC = (java.util.Map<String, Object>) tcConfig
+                                                                        .get("outcomeConfig");
+                                                        outcomeConfig = legacyOC;
+                                                }
+                                        }
+                                        if (taskKey != null && outcomeConfig != null) {
+                                                java.util.Map<String, Object> stepSnap = (java.util.Map<String, Object>) stepConfigsSnapshot
+                                                                .computeIfAbsent(taskKey,
+                                                                                k -> new java.util.HashMap<>());
+                                                stepSnap.put("outcomeConfig", outcomeConfig);
+                                        }
+                                }
+                                log.debug("Merged outcome configs from {} task configurations", taskConfigs.size());
+                        } catch (Exception e) {
+                                log.warn("Could not fetch task configs for outcome snapshot: {}", e.getMessage());
+                        }
+                }
+
                 // Get current gateway rules
                 java.util.List<com.enterprise.memo.entity.GatewayDecisionRule> gatewayRules = workflowConfigService
                                 .getGatewayRules(topic.getId());

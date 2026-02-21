@@ -28,20 +28,48 @@ public class WorkflowClient {
         private String workflowServiceUrl;
 
         /**
-         * Start a workflow process.
+         * Start a workflow process. Returns the Flowable process instance ID.
          */
+        @SuppressWarnings("unchecked")
         public String startProcess(StartProcessRequest request, UUID userId) {
                 log.info("Starting workflow process for businessKey: {}", request.getBusinessKey());
 
-                return webClientBuilder.build()
+                Map<String, Object> response = webClientBuilder.build()
                                 .post()
                                 .uri(workflowServiceUrl + "/api/process-instances")
                                 .header("X-User-Id", userId.toString())
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .bodyValue(request)
                                 .retrieve()
-                                .bodyToMono(String.class)
+                                .bodyToMono(Map.class)
                                 .block();
+
+                if (response != null && response.get("flowableProcessInstanceId") != null) {
+                        String processInstanceId = response.get("flowableProcessInstanceId").toString();
+                        log.info("Process started, flowableProcessInstanceId: {}", processInstanceId);
+                        return processInstanceId;
+                }
+                log.warn("Process started but no flowableProcessInstanceId in response: {}", response);
+                return null;
+        }
+
+        /**
+         * Get execution timeline for a process instance from workflow-service.
+         */
+        @SuppressWarnings("unchecked")
+        public java.util.List<Map<String, Object>> getTimeline(String processInstanceId) {
+                log.debug("Getting timeline for processInstanceId: {}", processInstanceId);
+                try {
+                        return webClientBuilder.build()
+                                        .get()
+                                        .uri(workflowServiceUrl + "/api/history/timeline/" + processInstanceId)
+                                        .retrieve()
+                                        .bodyToMono(java.util.List.class)
+                                        .block();
+                } catch (Exception e) {
+                        log.error("Failed to get timeline for {}: {}", processInstanceId, e.getMessage());
+                        return java.util.Collections.emptyList();
+                }
         }
 
         /**
@@ -67,6 +95,8 @@ public class WorkflowClient {
         /**
          * Complete a task with variables.
          * 
+         * @param actionLabel  The original button label (e.g. "Reject"), used by
+         *                     workflow-service for action validation
          * @param cancelOthers If true, other parallel tasks will be cancelled (for
          *                     "first approval wins" mode)
          * @param gatewayId    Optional. If provided with cancelOthers=true, only
@@ -74,9 +104,9 @@ public class WorkflowClient {
          *                     within this gateway's scope (for nested gateway support)
          */
         public void completeTask(String taskId, String userId, String userName, Map<String, Object> variables,
-                        boolean cancelOthers, String gatewayId) {
-                log.info("Completing task {} with variables for user {}, cancelOthers={}, gatewayId={}",
-                                taskId, userId, cancelOthers, gatewayId);
+                        String actionLabel, boolean cancelOthers, String gatewayId) {
+                log.info("Completing task {} with variables for user {}, action={}, cancelOthers={}, gatewayId={}",
+                                taskId, userId, actionLabel, cancelOthers, gatewayId);
 
                 // Build CompleteTaskRequest DTO structure expected by workflow-service
                 Map<String, Object> requestBody = new java.util.HashMap<>();
@@ -84,7 +114,11 @@ public class WorkflowClient {
                 requestBody.put("comment", variables != null ? variables.get("comment") : null);
                 // Derive approved flag from the decision/action variable
                 String decision = variables != null ? String.valueOf(variables.getOrDefault("decision", "")) : "";
-                requestBody.put("approved", "APPROVE".equalsIgnoreCase(decision));
+                requestBody.put("approved", "APPROVE".equalsIgnoreCase(decision)
+                                || "APPROVED".equalsIgnoreCase(decision));
+                // Pass the original button label for backend validation & action type
+                // resolution
+                requestBody.put("action", actionLabel != null ? actionLabel : decision);
 
                 StringBuilder urlBuilder = new StringBuilder(workflowServiceUrl + "/api/tasks/" + taskId + "/complete");
 
@@ -204,6 +238,28 @@ public class WorkflowClient {
         }
 
         /**
+         * Get all task configurations for a process template.
+         * Used during version snapshotting to capture outcome configs alongside step
+         * configs.
+         */
+        @SuppressWarnings("unchecked")
+        public java.util.List<Map<String, Object>> getTaskConfigsForTemplate(String processTemplateId) {
+                log.debug("Getting task configs for process template: {}", processTemplateId);
+                try {
+                        return webClientBuilder.build()
+                                        .get()
+                                        .uri(workflowServiceUrl + "/api/process-templates/" + processTemplateId
+                                                        + "/task-configs")
+                                        .retrieve()
+                                        .bodyToMono(java.util.List.class)
+                                        .block();
+                } catch (Exception e) {
+                        log.debug("No task configs for template {}: {}", processTemplateId, e.getMessage());
+                        return java.util.Collections.emptyList();
+                }
+        }
+
+        /**
          * Get outcome configuration for a task.
          * Returns the configured variable name and options for task completion.
          */
@@ -221,6 +277,87 @@ public class WorkflowClient {
                 } catch (Exception e) {
                         log.debug("No outcome config for task {}: {}", taskId, e.getMessage());
                         return null;
+                }
+        }
+
+        /**
+         * Get movement history for a task.
+         * Returns the ordered history of completed steps and valid return points,
+         * built from ActionTimeline events instead of static BPMN paths.
+         */
+        @SuppressWarnings("unchecked")
+        public Map<String, Object> getMovementHistory(String taskId) {
+                log.debug("Getting movement history for task: {}", taskId);
+
+                try {
+                        return webClientBuilder.build()
+                                        .get()
+                                        .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/movement-history")
+                                        .retrieve()
+                                        .bodyToMono(Map.class)
+                                        .block();
+                } catch (Exception e) {
+                        log.debug("No movement history for task {}: {}", taskId, e.getMessage());
+                        return null;
+                }
+        }
+
+        /**
+         * Get return points for a task (valid send-back targets based on movement
+         * history).
+         */
+        @SuppressWarnings("unchecked")
+        public java.util.List<Map<String, Object>> getReturnPoints(String taskId) {
+                log.debug("Getting return points for task: {}", taskId);
+                try {
+                        return webClientBuilder.build()
+                                        .get()
+                                        .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/return-points")
+                                        .retrieve()
+                                        .bodyToMono(java.util.List.class)
+                                        .block();
+                } catch (Exception e) {
+                        log.debug("No return points for task {}: {}", taskId, e.getMessage());
+                        return java.util.Collections.emptyList();
+                }
+        }
+
+        /**
+         * Send back a task to a previous step.
+         */
+        public void sendBackTask(String taskId, String targetActivityId, String reason) {
+                log.debug("Sending back task {} to {}", taskId, targetActivityId);
+                Map<String, Object> body = new java.util.HashMap<>();
+                body.put("targetActivityId", targetActivityId);
+                body.put("reason", reason);
+
+                webClientBuilder.build()
+                                .post()
+                                .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/send-back")
+                                .bodyValue(body)
+                                .retrieve()
+                                .bodyToMono(Void.class)
+                                .block();
+        }
+
+        /**
+         * Get delegate candidates for a task.
+         * Returns candidate groups and candidate users from the Flowable task.
+         */
+        @SuppressWarnings("unchecked")
+        public Map<String, Object> getDelegateCandidates(String taskId) {
+                log.debug("Getting delegate candidates for task: {}", taskId);
+                try {
+                        return webClientBuilder.build()
+                                        .get()
+                                        .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/delegate-candidates")
+                                        .retrieve()
+                                        .bodyToMono(Map.class)
+                                        .block();
+                } catch (Exception e) {
+                        log.debug("No delegate candidates for task {}: {}", taskId, e.getMessage());
+                        return Map.of("candidateGroups", java.util.Collections.emptyList(),
+                                        "candidateUsers", java.util.Collections.emptyList());
                 }
         }
 }

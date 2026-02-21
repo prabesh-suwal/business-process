@@ -30,16 +30,72 @@ public class TaskController {
     private final MemoTaskService taskService;
     private final com.enterprise.memo.client.WorkflowClient workflowClient;
     private final com.enterprise.memo.service.GatewayConfigService gatewayConfigService;
+    private final com.enterprise.memo.repository.MemoRepository memoRepository;
 
     /**
      * Get user's inbox (tasks assigned to them or their groups).
-     * Proxies to workflow-service. Headers are auto-propagated via
-     * UserContextWebClientFilter.
+     * Proxies to workflow-service and enriches with memo details
+     * (subject, reference number, topic name).
      */
     @GetMapping("/inbox")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getInbox() {
         log.debug("Getting inbox for user - headers auto-propagated via WebClient filter");
         java.util.List<java.util.Map<String, Object>> tasks = workflowClient.getTaskInbox();
+
+        // Enrich with memo details (subject, memoNumber, topicName)
+        if (tasks != null && !tasks.isEmpty()) {
+            // Collect all businessKeys (memo UUIDs) for batch lookup
+            java.util.Set<UUID> memoIds = new java.util.HashSet<>();
+            for (var task : tasks) {
+                Object bk = task.get("businessKey");
+                if (bk != null) {
+                    try {
+                        memoIds.add(UUID.fromString(bk.toString()));
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+
+            if (!memoIds.isEmpty()) {
+                // Batch lookup memos with topics eagerly loaded
+                java.util.Map<UUID, com.enterprise.memo.entity.Memo> memoMap = new java.util.HashMap<>();
+                try {
+                    var memos = memoRepository.findAllById(memoIds);
+                    for (var memo : memos) {
+                        memoMap.put(memo.getId(), memo);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to enrich inbox with memo details: {}", e.getMessage());
+                }
+
+                // Inject memo fields into each task
+                for (var task : tasks) {
+                    Object bk = task.get("businessKey");
+                    if (bk != null) {
+                        try {
+                            UUID memoId = UUID.fromString(bk.toString());
+                            var memo = memoMap.get(memoId);
+                            if (memo != null) {
+                                // Make task map mutable if needed
+                                java.util.Map<String, Object> enriched = new java.util.HashMap<>(task);
+                                enriched.put("subject", memo.getSubject());
+                                enriched.put("memoNumber", memo.getMemoNumber());
+                                try {
+                                    enriched.put("topicName", memo.getTopic().getName());
+                                } catch (Exception e) {
+                                    enriched.put("topicName", null);
+                                }
+                                task.clear();
+                                task.putAll(enriched);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+        }
+
         return ResponseEntity.ok(tasks);
     }
 
@@ -94,6 +150,10 @@ public class TaskController {
         variables.put("decision", request.getAction());
         variables.put("comment", request.getComment());
 
+        // The action sent from frontend is now the actionType (e.g., "REJECT"),
+        // not the label (e.g., "Reject Memo"). This is the stable identifier.
+        String actionType = request.getAction();
+
         // Enterprise pattern: resolve outcome config and inject option.sets variables
         try {
             java.util.Map<String, Object> outcomeConfig = workflowClient.getOutcomeConfig(taskId);
@@ -102,16 +162,15 @@ public class TaskController {
                 java.util.List<java.util.Map<String, Object>> options = (java.util.List<java.util.Map<String, Object>>) outcomeConfig
                         .get("options");
 
-                // Find the option whose label matches the action
-                String action = request.getAction();
+                // Find the option whose actionType matches
                 for (java.util.Map<String, Object> option : options) {
-                    String label = (String) option.get("label");
-                    if (label != null && label.equalsIgnoreCase(action)) {
+                    String optActionType = (String) option.get("actionType");
+                    if (optActionType != null && optActionType.equalsIgnoreCase(actionType)) {
                         @SuppressWarnings("unchecked")
                         java.util.Map<String, Object> sets = (java.util.Map<String, Object>) option.get("sets");
                         if (sets != null && !sets.isEmpty()) {
                             variables.putAll(sets);
-                            log.info("Injected sets from outcome option '{}': {}", label, sets);
+                            log.info("Injected sets from outcome option (actionType={}): {}", optActionType, sets);
                         }
                         break;
                     }
@@ -128,7 +187,8 @@ public class TaskController {
 
         log.info("Task {} cancelOthers={} gatewayId={}", taskId, cancelOthers, gatewayId);
 
-        workflowClient.completeTask(taskId, userId, userName, variables, cancelOthers, gatewayId);
+        workflowClient.completeTask(taskId, userId, userName, variables,
+                actionType, cancelOthers, gatewayId);
         return ResponseEntity.ok().build();
     }
 
@@ -145,6 +205,17 @@ public class TaskController {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(config);
+    }
+
+    /**
+     * Get delegate candidates for a task.
+     * Returns candidate groups and candidate users for the delegate user picker.
+     */
+    @GetMapping("/{taskId}/delegate-candidates")
+    public ResponseEntity<java.util.Map<String, Object>> getDelegateCandidates(@PathVariable String taskId) {
+        log.debug("Getting delegate candidates for task: {}", taskId);
+        java.util.Map<String, Object> candidates = workflowClient.getDelegateCandidates(taskId);
+        return ResponseEntity.ok(candidates);
     }
 
     /**
@@ -187,6 +258,8 @@ public class TaskController {
     /**
      * Get tasks for a specific memo.
      * Filters to only show PENDING tasks that the current user can act on.
+     * Includes inline outcomeConfig for each task to eliminate a separate API
+     * call.
      */
     @GetMapping("/memo/{memoId}")
     public ResponseEntity<List<MemoTaskDTO>> getTasksForMemo(@PathVariable UUID memoId) {
@@ -215,11 +288,66 @@ public class TaskController {
                             task.getCandidateGroups(), userGroups);
                     return canAct;
                 })
-                .map(MemoTaskDTO::fromEntity)
+                .map(task -> {
+                    MemoTaskDTO dto = MemoTaskDTO.fromEntity(task);
+                    // Inline the outcomeConfig to eliminate separate API call from frontend
+                    try {
+                        if (task.getWorkflowTaskId() != null) {
+                            java.util.Map<String, Object> outcomeConfig = workflowClient
+                                    .getOutcomeConfig(task.getWorkflowTaskId());
+                            dto.setOutcomeConfig(outcomeConfig);
+                        }
+                    } catch (Exception e) {
+                        log.debug("Could not resolve outcomeConfig for task {}: {}",
+                                task.getWorkflowTaskId(), e.getMessage());
+                    }
+                    return dto;
+                })
                 .collect(Collectors.toList());
 
         log.debug("Returning {} filtered tasks", dtos.size());
         return ResponseEntity.ok(dtos);
+    }
+
+    /**
+     * Get movement history for a task.
+     * Proxies to workflow-service. Returns history entries and valid return
+     * points.
+     */
+    @GetMapping("/{taskId}/movement-history")
+    public ResponseEntity<java.util.Map<String, Object>> getMovementHistory(@PathVariable String taskId) {
+        log.debug("Getting movement history for task: {}", taskId);
+        java.util.Map<String, Object> history = workflowClient.getMovementHistory(taskId);
+        if (history == null || history.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(history);
+    }
+
+    /**
+     * Get valid return points for send-back.
+     * Proxies to workflow-service. Returns list of steps this task can be sent
+     * back to.
+     */
+    @GetMapping("/{taskId}/return-points")
+    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getReturnPoints(
+            @PathVariable String taskId) {
+        log.debug("Getting return points for task: {}", taskId);
+        java.util.List<java.util.Map<String, Object>> points = workflowClient.getReturnPoints(taskId);
+        return ResponseEntity.ok(points);
+    }
+
+    /**
+     * Send back a task to a previous step.
+     * Proxies to workflow-service.
+     */
+    @PostMapping("/{taskId}/send-back")
+    public ResponseEntity<Void> sendBackTask(
+            @PathVariable String taskId,
+            @RequestBody java.util.Map<String, String> request) {
+        log.debug("Sending back task {} to {}", taskId, request.get("targetActivityId"));
+        workflowClient.sendBackTask(taskId, request.get("targetActivityId"), request.get("reason"));
+        return ResponseEntity.ok().build();
     }
 
     /**

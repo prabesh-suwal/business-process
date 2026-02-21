@@ -83,6 +83,7 @@ public class ActionTimeline {
         INTEGRATION_CALLED,
         NOTIFICATION_SENT,
         TASK_SENT_BACK,
-        TASK_REJECTED
+        TASK_REJECTED,
+        MEMO_SUBMITTED // When memo is submitted to begin the workflow
     }
 }

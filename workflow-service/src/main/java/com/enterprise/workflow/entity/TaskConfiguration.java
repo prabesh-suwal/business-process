@@ -132,6 +132,11 @@ public class TaskConfiguration {
     @Column(name = "condition_config", columnDefinition = "jsonb")
     private Map<String, Object> conditionConfig;
 
+    // === OUTCOME CONFIG (action buttons / decision routing) ===
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "outcome_config", columnDefinition = "jsonb")
+    private Map<String, Object> outcomeConfig;
+
     // Step order for display
     @Column(name = "step_order")
     @Builder.Default

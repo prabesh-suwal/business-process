@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import {
     ArrowLeft, Save, Workflow, Settings2, ChevronDown,
-    Layers, Rocket, GitBranch, Copy, Lock, FolderPlus, Upload, X, FileCode2
+    Layers, Rocket, GitBranch, Copy, Lock, FolderPlus, Upload, Download, X, FileCode2, Eye, ClipboardCopy
 } from 'lucide-react';
 import { PageContainer } from '../components/PageContainer';
 import { useGatewayConfigs } from '../hooks/useGatewayConfigs';
@@ -40,6 +40,7 @@ const WorkflowDesignerPage = () => {
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [importXmlText, setImportXmlText] = useState('');
+    const [showViewXmlModal, setShowViewXmlModal] = useState(false);
 
     // Ref to BpmnDesigner for accessing modeler internals
     const bpmnDesignerRef = useRef(null);
@@ -136,7 +137,9 @@ const WorkflowDesignerPage = () => {
                         escalationAction: c.escalationConfig?.escalations?.[0]?.action,
                         viewers: c.viewerConfig?.viewers || [],
                         // Branching/condition config
-                        conditionConfig: c.conditionConfig || null
+                        conditionConfig: c.conditionConfig || null,
+                        // Outcome config (action buttons)
+                        config: c.outcomeConfig ? { outcomeConfig: c.outcomeConfig } : undefined
                     };
                 });
                 setStepConfigs(configMap);
@@ -410,7 +413,8 @@ const WorkflowDesignerPage = () => {
                         }]
                     } : {},
                     viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {},
-                    conditionConfig: uiConfig.conditionConfig || null
+                    conditionConfig: uiConfig.conditionConfig || null,
+                    outcomeConfig: uiConfig.config?.outcomeConfig || null
                 };
                 return WorkflowConfigApi.saveStepConfig(topicId, taskKey, apiConfig);
             });
@@ -531,7 +535,8 @@ const WorkflowDesignerPage = () => {
                         }]
                     } : {},
                     viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {},
-                    conditionConfig: uiConfig.conditionConfig || null
+                    conditionConfig: uiConfig.conditionConfig || null,
+                    outcomeConfig: uiConfig.config?.outcomeConfig || null
                 };
                 return WorkflowConfigApi.saveStepConfig(currentTopicId, taskKey, apiConfig);
             });
@@ -585,7 +590,8 @@ const WorkflowDesignerPage = () => {
                             }]
                         } : {},
                         viewerConfig: uiConfig.viewers && uiConfig.viewers.length > 0 ? { viewers: uiConfig.viewers } : {},
-                        conditionConfig: uiConfig.conditionConfig || null
+                        conditionConfig: uiConfig.conditionConfig || null,
+                        outcomeConfig: uiConfig.config?.outcomeConfig || null
                     };
 
                     console.log('Saving step config to workflow-service for', taskKey, ':', JSON.stringify(apiConfig, null, 2));
@@ -682,6 +688,25 @@ const WorkflowDesignerPage = () => {
                         </div>
                     </div>
                     <div className="flex items-center space-x-3">
+                        {/* View BPMN XML Button */}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async () => {
+                                // Get fresh XML from the modeler
+                                if (bpmnDesignerRef.current?.getModeler) {
+                                    try {
+                                        const result = await bpmnDesignerRef.current.getModeler().saveXML({ format: true });
+                                        if (result?.xml) setBpmnXml(result.xml);
+                                    } catch (e) { /* use existing state */ }
+                                }
+                                setShowViewXmlModal(true);
+                            }}
+                            className="text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                            title="View BPMN XML"
+                        >
+                            <Eye className="w-4 h-4" />
+                        </Button>
                         {/* Import BPMN Button */}
                         {!isDeployed && (
                             <Button
@@ -956,6 +981,96 @@ const WorkflowDesignerPage = () => {
                                 <Upload className="w-4 h-4 mr-2" />
                                 Import Diagram
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* View BPMN XML Modal */}
+            {showViewXmlModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setShowViewXmlModal(false)}
+                    />
+                    {/* Modal */}
+                    <div className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 overflow-hidden">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-emerald-500/20">
+                                    <FileCode2 className="w-5 h-5 text-emerald-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">BPMN XML</h3>
+                                    <p className="text-xs text-slate-400">Current workflow diagram source</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowViewXmlModal(false)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        {/* Body */}
+                        <div className="px-6 py-4">
+                            <textarea
+                                value={bpmnXml || 'No BPMN XML available'}
+                                readOnly
+                                className="w-full h-96 bg-slate-800 border border-slate-600 rounded-xl p-4 text-sm text-slate-200 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                spellCheck={false}
+                            />
+                        </div>
+                        {/* Footer */}
+                        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-700">
+                            <span className="text-xs text-slate-500">
+                                {bpmnXml ? `${bpmnXml.length.toLocaleString()} characters` : 'Empty'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowViewXmlModal(false)}
+                                    className="text-slate-400 hover:text-white hover:bg-white/10"
+                                >
+                                    Close
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={!bpmnXml}
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(bpmnXml);
+                                        toast.success('XML copied to clipboard');
+                                    }}
+                                    className="bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20"
+                                >
+                                    <ClipboardCopy className="w-4 h-4 mr-2" />
+                                    Copy
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    disabled={!bpmnXml}
+                                    onClick={() => {
+                                        const blob = new Blob([bpmnXml], { type: 'application/xml' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `${topic?.name || 'workflow'}.bpmn`;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                        URL.revokeObjectURL(url);
+                                        toast.success('BPMN file downloaded');
+                                    }}
+                                    className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white border-0"
+                                >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Download .bpmn
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>

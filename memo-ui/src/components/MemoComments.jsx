@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { MoreHorizontal, Reply, Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import {
+    MoreHorizontal, Reply, Trash2, ChevronDown, ChevronUp, Loader2,
+    CheckCircle, XCircle, CornerUpLeft, MessageSquare, Zap
+} from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -10,12 +13,11 @@ import {
     DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import RichTextEditor from './RichTextEditor';
-import { MemoApi, CasAdminApi } from '../lib/api';
+import { MemoApi, CasAdminApi, HistoryApi } from '../lib/api';
 import { toast } from 'sonner';
 
 /**
  * Extract mentioned user IDs from TipTap HTML content.
- * TipTap renders mentions as <span data-id="userId" data-type="mention">...</span>
  */
 function extractMentionIds(htmlContent) {
     if (!htmlContent) return [];
@@ -24,9 +26,6 @@ function extractMentionIds(htmlContent) {
     return matches.map(m => m.replace('data-id="', '').replace('"', ''));
 }
 
-/**
- * Format a timestamp into a relative time string.
- */
 function formatRelativeTime(dateStr) {
     if (!dateStr) return '';
     const date = new Date(dateStr);
@@ -43,17 +42,79 @@ function formatRelativeTime(dateStr) {
     return date.toLocaleDateString();
 }
 
-/**
- * Get initials from a name string.
- */
 function getInitials(name) {
     if (!name) return '??';
     return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 }
 
-/**
- * Single comment component with reply functionality.
- */
+// ─── Action Comment Config ──────────────────────────────────────────────
+const ACTION_CONFIG = {
+    TASK_COMPLETED: {
+        icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50',
+        border: 'border-green-200', badgeBg: 'bg-green-100 text-green-700',
+    },
+    TASK_REJECTED: {
+        icon: XCircle, color: 'text-red-600', bg: 'bg-red-50',
+        border: 'border-red-200', badgeBg: 'bg-red-100 text-red-700',
+    },
+    TASK_SENT_BACK: {
+        icon: CornerUpLeft, color: 'text-orange-500', bg: 'bg-orange-50',
+        border: 'border-orange-200', badgeBg: 'bg-orange-100 text-orange-700',
+    },
+};
+
+// ─── Action Comment Card (read-only, from workflow events) ──────────────
+function ActionCommentItem({ event }) {
+    const actionType = event.actionType;
+    const config = ACTION_CONFIG[actionType] || {
+        icon: Zap, color: 'text-slate-400', bg: 'bg-slate-50',
+        border: 'border-slate-200', badgeBg: 'bg-slate-100 text-slate-500',
+    };
+    const IconComponent = config.icon;
+    const commentText = event.metadata?.comment || event.metadata?.reason || '';
+    const actionLabel = event.actionLabel || event.metadata?.action || actionType?.replace('TASK_', '');
+    const stepName = event.taskName || 'Unknown Step';
+    const actorName = event.actorName || 'System';
+
+    return (
+        <div className="relative group">
+            <Card className={`border shadow-sm ${config.border} ${config.bg}`}>
+                <CardContent className="p-4">
+                    <div className="flex gap-3">
+                        <div className={`flex items-center justify-center w-9 h-9 rounded-full border-2 ${config.border} bg-white shrink-0`}>
+                            <IconComponent className={`w-4 h-4 ${config.color}`} />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-900 text-sm">{actorName}</span>
+                                <span className="text-slate-300">·</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide ${config.badgeBg}`}>
+                                    {actionLabel}
+                                </span>
+                                <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    {stepName}
+                                </span>
+                                <span className="text-slate-300">·</span>
+                                <span className="text-xs text-slate-400 font-medium">{formatRelativeTime(event.createdAt)}</span>
+                            </div>
+                            {commentText && (
+                                <div className="flex items-start gap-1.5 mt-1">
+                                    <MessageSquare className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                                    <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{commentText}</p>
+                                </div>
+                            )}
+                            {!commentText && (
+                                <p className="text-xs text-slate-400 italic">No comment provided</p>
+                            )}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
+// ─── User Comment Card ──────────────────────────────────────────────────
 function CommentItem({ comment, onReply, onDelete, isReply = false, users, currentUserId }) {
     const [showReplyEditor, setShowReplyEditor] = useState(false);
     const [replyContent, setReplyContent] = useState('');
@@ -62,7 +123,6 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
 
     const handlePostReply = async () => {
         if (!replyContent || replyContent === '<p><br></p>') return;
-
         setIsPostingReply(true);
         try {
             const mentionedUserIds = extractMentionIds(replyContent);
@@ -82,7 +142,6 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
 
     return (
         <div className={`relative group ${isReply ? 'ml-12' : ''}`}>
-            {/* Thread line for parent with replies */}
             {!isReply && hasReplies && (
                 <div className="absolute left-[20px] top-12 bottom-0 w-0.5 bg-slate-200 z-0" />
             )}
@@ -139,7 +198,6 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
                                 dangerouslySetInnerHTML={{ __html: comment.content }}
                             />
 
-                            {/* Reply button (inline) */}
                             {!isReply && (
                                 <div className="flex items-center gap-3 pt-1">
                                     <button
@@ -165,7 +223,6 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
                 </CardContent>
             </Card>
 
-            {/* Inline reply editor */}
             {showReplyEditor && (
                 <div className="ml-12 mt-2 mb-2">
                     <Card className="border border-blue-200 shadow-sm bg-blue-50/30">
@@ -179,11 +236,7 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
                                 users={users}
                             />
                             <div className="flex justify-end gap-2 mt-2">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => { setShowReplyEditor(false); setReplyContent(''); }}
-                                >
+                                <Button variant="ghost" size="sm" onClick={() => { setShowReplyEditor(false); setReplyContent(''); }}>
                                     Cancel
                                 </Button>
                                 <Button
@@ -200,7 +253,6 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
                 </div>
             )}
 
-            {/* Replies */}
             {hasReplies && showReplies && (
                 <div className="mt-2 space-y-2">
                     {comment.replies.map(reply => (
@@ -221,32 +273,39 @@ function CommentItem({ comment, onReply, onDelete, isReply = false, users, curre
 }
 
 /**
- * Main memo comments component with threaded replies and @mentions.
+ * Main memo comments component — merges user comments and workflow action comments.
  */
 export default function MemoComments({ memoId }) {
     const [comments, setComments] = useState([]);
+    const [actionComments, setActionComments] = useState([]);
     const [newComment, setNewComment] = useState('');
     const [isPosting, setIsPosting] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [users, setUsers] = useState([]);
     const [currentUserId, setCurrentUserId] = useState(null);
+    const [showFilter, setShowFilter] = useState('all'); // 'all' | 'comments' | 'actions'
 
-    // Load comments and users
     useEffect(() => {
         if (!memoId) return;
 
         const loadData = async () => {
             setIsLoading(true);
             try {
-                const [commentsData, usersData] = await Promise.all([
+                const [commentsData, usersData, timelineData] = await Promise.all([
                     MemoApi.getComments(memoId),
-                    CasAdminApi.getUsers('MMS').catch(() => [])
+                    CasAdminApi.getUsers('MMS').catch(() => []),
+                    HistoryApi.getTimeline(memoId).catch(() => []),
                 ]);
 
                 setComments(commentsData || []);
 
-                // Transform users for mention suggestions
-                // API returns DropdownItem: { id, code, label }
+                // Extract action comments from timeline (events with comments)
+                const actionEvents = (timelineData || []).filter(e =>
+                    ['TASK_COMPLETED', 'TASK_REJECTED', 'TASK_SENT_BACK'].includes(e.actionType) &&
+                    (e.metadata?.comment || e.metadata?.reason)
+                );
+                setActionComments(actionEvents);
+
                 const mentionUsers = (usersData || []).map(u => ({
                     id: u.id,
                     label: u.label || u.code || 'Unknown',
@@ -254,16 +313,13 @@ export default function MemoComments({ memoId }) {
                 }));
                 setUsers(mentionUsers);
 
-                // Get current user from localStorage
                 try {
                     const userStr = localStorage.getItem('user');
                     if (userStr) {
                         const user = JSON.parse(userStr);
                         setCurrentUserId(user.id || user.userId);
                     }
-                } catch (e) {
-                    // ignore
-                }
+                } catch (e) { /* ignore */ }
             } catch (err) {
                 console.error('Failed to load comments:', err);
                 toast.error('Failed to load comments');
@@ -275,9 +331,23 @@ export default function MemoComments({ memoId }) {
         loadData();
     }, [memoId]);
 
+    // Merge and sort all items chronologically (newest first)
+    const mergedItems = useMemo(() => {
+        let items = [];
+
+        if (showFilter === 'all' || showFilter === 'comments') {
+            items.push(...comments.map(c => ({ ...c, _type: 'comment', _sortDate: new Date(c.createdAt) })));
+        }
+        if (showFilter === 'all' || showFilter === 'actions') {
+            items.push(...actionComments.map(e => ({ ...e, _type: 'action', _sortDate: new Date(e.createdAt) })));
+        }
+
+        items.sort((a, b) => b._sortDate - a._sortDate);
+        return items;
+    }, [comments, actionComments, showFilter]);
+
     const handlePostComment = async () => {
         if (!newComment || newComment === '<p><br></p>') return;
-
         setIsPosting(true);
         try {
             const mentionedUserIds = extractMentionIds(newComment);
@@ -302,14 +372,9 @@ export default function MemoComments({ memoId }) {
             parentCommentId,
             mentionedUserIds: mentionedUserIds?.length > 0 ? mentionedUserIds : undefined,
         });
-
-        // Insert reply into the right parent
         setComments(prev => prev.map(comment => {
             if (comment.id === parentCommentId) {
-                return {
-                    ...comment,
-                    replies: [...(comment.replies || []), result],
-                };
+                return { ...comment, replies: [...(comment.replies || []), result] };
             }
             return comment;
         }));
@@ -318,14 +383,11 @@ export default function MemoComments({ memoId }) {
     const handleDelete = useCallback(async (commentId) => {
         try {
             await MemoApi.deleteComment(memoId, commentId);
-            // Remove from top-level or from replies
             setComments(prev =>
-                prev
-                    .filter(c => c.id !== commentId)
-                    .map(c => ({
-                        ...c,
-                        replies: (c.replies || []).filter(r => r.id !== commentId),
-                    }))
+                prev.filter(c => c.id !== commentId).map(c => ({
+                    ...c,
+                    replies: (c.replies || []).filter(r => r.id !== commentId),
+                }))
             );
             toast.success('Comment deleted');
         } catch (err) {
@@ -334,8 +396,10 @@ export default function MemoComments({ memoId }) {
         }
     }, [memoId]);
 
+    const hasActions = actionComments.length > 0;
+
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-4xl mx-auto space-y-4">
             {/* Input Area */}
             <Card className="border shadow-sm bg-white overflow-hidden">
                 <CardContent className="p-0">
@@ -364,7 +428,33 @@ export default function MemoComments({ memoId }) {
                 </CardContent>
             </Card>
 
-            {/* Loading State */}
+            {/* Filter chips (only if action comments exist) */}
+            {!isLoading && hasActions && (
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 mr-1">Show:</span>
+                    {[
+                        { key: 'all', label: 'All', count: comments.length + actionComments.length },
+                        { key: 'comments', label: 'Comments', count: comments.length },
+                        { key: 'actions', label: 'Step Actions', count: actionComments.length },
+                    ].map(f => (
+                        <button
+                            key={f.key}
+                            onClick={() => setShowFilter(f.key)}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${showFilter === f.key
+                                    ? 'bg-slate-800 text-white'
+                                    : 'bg-white text-slate-500 border border-slate-200 hover:border-slate-300'
+                                }`}
+                        >
+                            {f.label}
+                            <span className={`ml-1 ${showFilter === f.key ? 'text-slate-300' : 'text-slate-400'}`}>
+                                {f.count}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* Loading */}
             {isLoading && (
                 <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
@@ -373,7 +463,7 @@ export default function MemoComments({ memoId }) {
             )}
 
             {/* Empty State */}
-            {!isLoading && comments.length === 0 && (
+            {!isLoading && mergedItems.length === 0 && (
                 <div className="text-center py-12">
                     <div className="text-slate-300 text-4xl mb-3">💬</div>
                     <p className="text-slate-400 text-sm font-medium">No comments yet</p>
@@ -381,18 +471,22 @@ export default function MemoComments({ memoId }) {
                 </div>
             )}
 
-            {/* Comments List */}
+            {/* Merged List */}
             {!isLoading && (
-                <div className="space-y-4">
-                    {comments.map((comment) => (
-                        <CommentItem
-                            key={comment.id}
-                            comment={comment}
-                            onReply={handleReply}
-                            onDelete={handleDelete}
-                            users={users}
-                            currentUserId={currentUserId}
-                        />
+                <div className="space-y-3">
+                    {mergedItems.map((item, index) => (
+                        item._type === 'action' ? (
+                            <ActionCommentItem key={`action-${item.id || index}`} event={item} />
+                        ) : (
+                            <CommentItem
+                                key={`comment-${item.id}`}
+                                comment={item}
+                                onReply={handleReply}
+                                onDelete={handleDelete}
+                                users={users}
+                                currentUserId={currentUserId}
+                            />
+                        )
                     ))}
                 </div>
             )}

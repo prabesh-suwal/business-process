@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 import Form from '@rjsf/core';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import validator from '@rjsf/validator-ajv8';
-import AuditHistoryPanel from '../components/AuditHistoryPanel';
+import ExecutionHistory from '../components/ExecutionHistory';
 import { Label } from '../components/ui/label';
 import { PageContainer } from '../components/PageContainer';
 import MemoComments from '../components/MemoComments';
@@ -48,6 +48,21 @@ export default function MemoEditor() {
     const [outcomeConfig, setOutcomeConfig] = useState(null);
     const [actionMeta, setActionMeta] = useState(null);
 
+    // Send-Back Dialog State
+    const [sendBackDialogOpen, setSendBackDialogOpen] = useState(false);
+    const [returnPoints, setReturnPoints] = useState([]);
+    const [selectedReturnPoint, setSelectedReturnPoint] = useState(null);
+    const [sendBackReason, setSendBackReason] = useState('');
+    const [loadingReturnPoints, setLoadingReturnPoints] = useState(false);
+
+    // Delegate Dialog State
+    const [delegateDialogOpen, setDelegateDialogOpen] = useState(false);
+    const [delegateCandidates, setDelegateCandidates] = useState([]);
+    const [selectedDelegateUser, setSelectedDelegateUser] = useState(null);
+    const [delegateComment, setDelegateComment] = useState('');
+    const [loadingDelegateCandidates, setLoadingDelegateCandidates] = useState(false);
+    const [delegateSearch, setDelegateSearch] = useState('');
+
     useEffect(() => {
         loadMemo();
         loadAttachments();
@@ -66,16 +81,22 @@ export default function MemoEditor() {
                     if (tasks && tasks.length > 0) {
                         console.log(`[MemoEditor] Setting activeTask:`, tasks[0]);
                         setActiveTask(tasks[0]);
-                        // Fetch outcome config for the active task
-                        try {
-                            const taskId = tasks[0].workflowTaskId || tasks[0].id;
-                            const config = await TaskApi.getOutcomeConfig(taskId);
-                            if (config) {
-                                console.log(`[MemoEditor] Outcome config:`, config);
-                                setOutcomeConfig(config);
+                        // Use inline outcomeConfig from the task DTO (no separate API call needed)
+                        if (tasks[0].outcomeConfig) {
+                            console.log(`[MemoEditor] Inline outcome config:`, tasks[0].outcomeConfig);
+                            setOutcomeConfig(tasks[0].outcomeConfig);
+                        } else {
+                            // Fallback: fetch outcome config separately (backward compat)
+                            try {
+                                const taskId = tasks[0].workflowTaskId || tasks[0].id;
+                                const config = await TaskApi.getOutcomeConfig(taskId);
+                                if (config) {
+                                    console.log(`[MemoEditor] Fetched outcome config:`, config);
+                                    setOutcomeConfig(config);
+                                }
+                            } catch (e) {
+                                console.debug('[MemoEditor] No outcome config:', e);
                             }
-                        } catch (e) {
-                            console.debug('[MemoEditor] No outcome config:', e);
                         }
                     } else {
                         console.log(`[MemoEditor] No actionable tasks found for this user`);
@@ -161,18 +182,142 @@ export default function MemoEditor() {
     };
 
     const openActionDialog = (type, meta = null) => {
+        // Only BACK_TO_STEP opens the step-picker dialog (user chooses which step)
+        // Legacy: 'sendback'/'SENDBACK' also open it for backward compat
+        if (meta?.actionType === 'BACK_TO_STEP' ||
+            type === 'sendback' || type === 'SENDBACK') {
+            openSendBackDialog();
+            return;
+        }
+        // DELEGATE opens the user-picker dialog
+        if (meta?.actionType === 'DELEGATE') {
+            openDelegateDialog();
+            return;
+        }
+        // All other action types (APPROVE, REJECT, ESCALATE, SEND_BACK, BACK_TO_INITIATOR)
+        // open the comment dialog — SEND_BACK auto-determines the previous step
         setActionType(type);
-        setActionMeta(meta); // { label, style, sets } for dynamic options
+        setActionMeta(meta); // { actionType, label, style, sets, requiresComment } for dynamic options
         setComment('');
         setActionDialogOpen(true);
+    };
+
+    const openSendBackDialog = async () => {
+        if (!activeTask) return;
+        setLoadingReturnPoints(true);
+        setSendBackReason('');
+        setSelectedReturnPoint(null);
+        setSendBackDialogOpen(true);
+        try {
+            const taskId = activeTask.workflowTaskId || activeTask.id;
+            const points = await TaskApi.getReturnPoints(taskId);
+            console.log('[MemoEditor] Return points:', points);
+            setReturnPoints(points || []);
+        } catch (e) {
+            console.error('[MemoEditor] Failed to load return points:', e);
+            toast.error('Failed to load return points');
+            setReturnPoints([]);
+        } finally {
+            setLoadingReturnPoints(false);
+        }
+    };
+
+    const handleSendBack = async () => {
+        if (!activeTask || !selectedReturnPoint) return;
+        setSubmitting(true);
+        try {
+            const taskId = activeTask.workflowTaskId || activeTask.id;
+            // Unified flow: route through completeTask with BACK_TO_STEP actionType
+            await TaskApi.completeTask(
+                taskId,
+                'BACK_TO_STEP',           // actionType (stable identifier)
+                sendBackReason,            // comment
+                {
+                    decision: 'SENT_BACK',
+                    targetStep: selectedReturnPoint.taskKey  // user-selected step
+                }
+            );
+            toast.success('Task sent back successfully');
+            setSendBackDialogOpen(false);
+            loadMemo();
+            setActiveTask(null);
+            setOutcomeConfig(null);
+        } catch (error) {
+            console.error(error);
+            toast.error('Failed to send back task');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const openDelegateDialog = async () => {
+        if (!activeTask) return;
+        setLoadingDelegateCandidates(true);
+        setDelegateComment('');
+        setSelectedDelegateUser(null);
+        setDelegateSearch('');
+        setDelegateDialogOpen(true);
+        try {
+            const taskId = activeTask.workflowTaskId || activeTask.id;
+            const candidates = await TaskApi.getDelegateCandidates(taskId);
+            const groups = candidates.candidateGroups || [];
+            let users = [];
+            if (groups.length > 0) {
+                // Resolve users from candidate groups via CAS
+                users = await TaskApi.getUsersByRoles(groups);
+            }
+            // Also add any explicit candidate users
+            if (candidates.candidateUsers?.length > 0) {
+                const existingIds = new Set(users.map(u => u.id));
+                candidates.candidateUsers.forEach(userId => {
+                    if (!existingIds.has(userId)) {
+                        users.push({ id: userId, code: userId, label: userId });
+                    }
+                });
+            }
+            setDelegateCandidates(users);
+        } catch (e) {
+            console.error('[MemoEditor] Failed to load delegate candidates:', e);
+            toast.error('Failed to load delegate candidates');
+            setDelegateCandidates([]);
+        } finally {
+            setLoadingDelegateCandidates(false);
+        }
+    };
+
+    const handleDelegate = async () => {
+        if (!activeTask || !selectedDelegateUser) return;
+        setSubmitting(true);
+        try {
+            const taskId = activeTask.workflowTaskId || activeTask.id;
+            await TaskApi.completeTask(
+                taskId,
+                'DELEGATE',
+                delegateComment,
+                {
+                    delegateTo: selectedDelegateUser.id
+                }
+            );
+            toast.success(`Task delegated to ${selectedDelegateUser.label}`);
+            setDelegateDialogOpen(false);
+            loadMemo();
+            setActiveTask(null);
+            setOutcomeConfig(null);
+        } catch (error) {
+            console.error(error);
+            toast.error('Failed to delegate task');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const handleAction = async () => {
         if (!activeTask) return;
         setSubmitting(true);
         try {
-            const decision = actionType?.toUpperCase() || 'APPROVE';
-            const variables = { decision };
+            // Use actionType (stable identifier) not label (user-editable)
+            const resolvedActionType = actionMeta?.actionType || actionType?.toUpperCase() || 'APPROVE';
+            const variables = { decision: resolvedActionType };
 
             // Enterprise pattern: inject all variables from option.sets map
             if (actionMeta?.sets) {
@@ -184,7 +329,7 @@ export default function MemoEditor() {
 
             await TaskApi.completeTask(
                 activeTask.workflowTaskId || activeTask.id,
-                decision,
+                resolvedActionType,
                 comment,
                 variables
             );
@@ -327,7 +472,7 @@ export default function MemoEditor() {
                                 className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-brand-blue data-[state=active]:text-brand-blue rounded-none px-0 py-2 bg-transparent text-slate-500 shadow-none border-b-2 border-transparent transition-all"
                             >
                                 <History className="w-4 h-4 mr-2" />
-                                Audit Trail
+                                Execution History
                             </TabsTrigger>
                             <TabsTrigger
                                 value="attachments"
@@ -477,13 +622,9 @@ export default function MemoEditor() {
                             <MemoComments memoId={id} />
                         </TabsContent>
 
-                        {/* Audit Trail Tab */}
+                        {/* Execution History Tab */}
                         <TabsContent value="audit" className="mt-0 animate-in fade-in duration-300">
-                            {memo.processInstanceId ? (
-                                <AuditHistoryPanel processInstanceId={memo.processInstanceId} className="border-0 shadow-none px-0" />
-                            ) : (
-                                <div className="text-center py-12 text-slate-400 italic">No audit history available (Local Draft)</div>
-                            )}
+                            <ExecutionHistory memoId={id} />
                         </TabsContent>
 
                         {/* Attachments Tab */}
@@ -523,13 +664,20 @@ export default function MemoEditor() {
             <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle className="capitalize">{actionType} Memo</DialogTitle>
+                        <DialogTitle className="capitalize">{actionMeta?.label || actionType} Memo</DialogTitle>
                         <DialogDescription>
-                            Please provide a comment for this action.
+                            {actionMeta?.confirmationMessage
+                                ? actionMeta.confirmationMessage
+                                : 'Please provide a comment for this action.'}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4">
-                        <Label>Comment {actionType === 'reject' && <span className="text-red-500">*</span>}</Label>
+                        <Label>
+                            Comment
+                            {(actionMeta?.requiresComment || actionType === 'reject') && (
+                                <span className="text-red-500 ml-1">* Required</span>
+                            )}
+                        </Label>
                         <textarea
                             className="w-full mt-2 p-2 border rounded-md text-sm min-h-[100px] focus:ring-2 focus:ring-brand-blue focus:border-brand-blue outline-none"
                             placeholder="Type your comment here..."
@@ -541,12 +689,191 @@ export default function MemoEditor() {
                         <Button variant="outline" onClick={() => setActionDialogOpen(false)}>Cancel</Button>
                         <Button
                             onClick={handleAction}
-                            disabled={submitting || (actionType === 'reject' && !comment)}
+                            disabled={
+                                submitting ||
+                                ((actionMeta?.requiresComment || actionType === 'reject') && !comment.trim())
+                            }
                             className={actionMeta ? getOutcomeButtonStyle(actionMeta.style || 'default')
                                 : actionType === 'approve' ? 'bg-green-600 hover:bg-green-700 text-white' : actionType === 'reject' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-orange-600 hover:bg-orange-700 text-white'}
                         >
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Confirm {actionMeta?.label || (actionType === 'sendback' ? 'Revision Request' : actionType)}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Send-Back Dialog with Return Points */}
+            <Dialog open={sendBackDialogOpen} onOpenChange={setSendBackDialogOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Send Back for Revision</DialogTitle>
+                        <DialogDescription>
+                            Select which step to return this memo to.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        {/* Return Points List */}
+                        <div>
+                            <Label className="mb-2 block">Return to step:</Label>
+                            {loadingReturnPoints ? (
+                                <div className="flex items-center justify-center py-6 text-slate-500">
+                                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                    <span>Loading return points...</span>
+                                </div>
+                            ) : returnPoints.length === 0 ? (
+                                <div className="text-center py-6 text-slate-400 text-sm">
+                                    No previous steps available to return to.
+                                </div>
+                            ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {returnPoints.map((point, idx) => (
+                                        <label
+                                            key={idx}
+                                            className={`flex items-center p-3 border rounded-lg cursor-pointer transition-all ${selectedReturnPoint?.taskKey === point.taskKey
+                                                ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-300'
+                                                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                                }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="returnPoint"
+                                                checked={selectedReturnPoint?.taskKey === point.taskKey}
+                                                onChange={() => setSelectedReturnPoint(point)}
+                                                className="mr-3 text-orange-600 focus:ring-orange-500"
+                                            />
+                                            <div>
+                                                <div className="font-medium text-sm text-slate-800">
+                                                    {point.taskName || point.taskKey}
+                                                </div>
+                                                {point.completedAt && (
+                                                    <div className="text-xs text-slate-400 mt-0.5">
+                                                        Completed {new Date(point.completedAt).toLocaleDateString()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Reason */}
+                        <div>
+                            <Label>Reason <span className="text-red-500 ml-1">* Required</span></Label>
+                            <textarea
+                                className="w-full mt-2 p-2 border rounded-md text-sm min-h-[80px] focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
+                                placeholder="Explain why this memo needs to be sent back..."
+                                value={sendBackReason}
+                                onChange={(e) => setSendBackReason(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setSendBackDialogOpen(false)}>Cancel</Button>
+                        <Button
+                            onClick={handleSendBack}
+                            disabled={submitting || !selectedReturnPoint || !sendBackReason.trim()}
+                            className="bg-orange-600 hover:bg-orange-700 text-white"
+                        >
+                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Send Back
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ==================== DELEGATE DIALOG ==================== */}
+            <Dialog open={delegateDialogOpen} onOpenChange={setDelegateDialogOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Delegate Task</DialogTitle>
+                        <DialogDescription>
+                            Select a user to delegate this task to.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        {/* Search */}
+                        <div>
+                            <input
+                                type="text"
+                                className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                placeholder="Search users..."
+                                value={delegateSearch}
+                                onChange={(e) => setDelegateSearch(e.target.value)}
+                            />
+                        </div>
+
+                        {/* User List */}
+                        <div>
+                            <Label className="mb-2 block">Delegate to:</Label>
+                            {loadingDelegateCandidates ? (
+                                <div className="flex items-center justify-center py-6 text-slate-500">
+                                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                    <span>Loading eligible users...</span>
+                                </div>
+                            ) : delegateCandidates.length === 0 ? (
+                                <div className="text-center py-6 text-slate-400 text-sm">
+                                    No eligible users found for this task.
+                                </div>
+                            ) : (
+                                <div className="space-y-2 max-h-56 overflow-y-auto">
+                                    {delegateCandidates
+                                        .filter(u => {
+                                            if (!delegateSearch.trim()) return true;
+                                            const q = delegateSearch.toLowerCase();
+                                            return (u.label || '').toLowerCase().includes(q)
+                                                || (u.code || '').toLowerCase().includes(q);
+                                        })
+                                        .map((user) => (
+                                            <label
+                                                key={user.id}
+                                                className={`flex items-center p-3 border rounded-lg cursor-pointer transition-all ${selectedDelegateUser?.id === user.id
+                                                    ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300'
+                                                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                                    }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="delegateUser"
+                                                    checked={selectedDelegateUser?.id === user.id}
+                                                    onChange={() => setSelectedDelegateUser(user)}
+                                                    className="mr-3 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <div>
+                                                    <div className="font-medium text-sm text-slate-800">
+                                                        {user.label}
+                                                    </div>
+                                                    <div className="text-xs text-slate-400">
+                                                        {user.code}
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Comment */}
+                        <div>
+                            <Label>Comment <span className="text-slate-400 text-xs">(optional)</span></Label>
+                            <textarea
+                                className="w-full mt-2 p-2 border rounded-md text-sm min-h-[60px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                placeholder="Add a note for the delegate..."
+                                value={delegateComment}
+                                onChange={(e) => setDelegateComment(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDelegateDialogOpen(false)}>Cancel</Button>
+                        <Button
+                            onClick={handleDelegate}
+                            disabled={submitting || !selectedDelegateUser}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Delegate
                         </Button>
                     </DialogFooter>
                 </DialogContent>

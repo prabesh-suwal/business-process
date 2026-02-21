@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Growphase – Hero Section</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ════════════════════════════════════
+   THEME TOKENS
+════════════════════════════════════ */
+:root {
+  --teal-1: #2d6878;
+  --teal-2: #3d8a96;
+  --teal-3: #62bdd0;
+  --cyan:   #7de8f8;
+  /* transition speed for theme switch */
+  --t: 0.5s;
+}
+
+[data-theme="dark"] {
+  --bg:             #000000;
+  --bg-ticker:      rgba(6,6,10,0.88);
+  --border-ticker:  rgba(62,138,150,0.4);
+  --text-sym:       #888;
+  --text-val:       #e0f6fb;
+  --brand-color:    #2d6878;
+  --tag-color:      #62bdd0;
+  --chip-text:      #62bdd0;
+  --chip-border:    rgba(98,189,208,0.35);
+  --chip-bg:        rgba(98,189,208,0.04);
+  --chip-hover-bg:  rgba(98,189,208,0.14);
+  --chip-hover-brd: #62bdd0;
+  --corner-color:   #3d8a96;
+  --notch-color:    #000000;
+  --halo:           rgba(98,189,208,0.07);
+  --toggle-bg:      rgba(255,255,255,0.05);
+  --toggle-border:  rgba(98,189,208,0.4);
+  --toggle-text:    #62bdd0;
+  --pill-bg:        rgba(98,189,208,0.3);
+  --pill-on:        #3d8a96;
+}
+
+[data-theme="light"] {
+  --bg:             #e8f4f8;
+  --bg-ticker:      rgba(215,238,246,0.95);
+  --border-ticker:  rgba(45,104,120,0.25);
+  --text-sym:       #5a7f8c;
+  --text-val:       #14404f;
+  --brand-color:    #1a5060;
+  --tag-color:      #286474;
+  --chip-text:      #286474;
+  --chip-border:    rgba(40,100,116,0.38);
+  --chip-bg:        rgba(40,100,116,0.07);
+  --chip-hover-bg:  rgba(40,100,116,0.16);
+  --chip-hover-brd: #286474;
+  --corner-color:   #286474;
+  --notch-color:    #e8f4f8;
+  --halo:           rgba(45,104,120,0.09);
+  --toggle-bg:      rgba(40,100,116,0.08);
+  --toggle-border:  rgba(40,100,116,0.38);
+  --toggle-text:    #1a5060;
+  --pill-bg:        rgba(40,100,116,0.25);
+  --pill-on:        #3d8a96;
+}
+
+/* ════════════════════════════════════
+   BASE
+════════════════════════════════════ */
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  transition: background var(--t) ease;
+}
+
+#bgCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+}
+
+/* ════════════════════════════════════
+   THEME TOGGLE BUTTON
+════════════════════════════════════ */
+.theme-toggle {
+  position: fixed;
+  top: 20px; right: 20px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--toggle-bg);
+  border: 1px solid var(--toggle-border);
+  border-radius: 50px;
+  padding: 7px 10px 7px 16px;
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), box-shadow 0.3s;
+  outline: none;
+}
+.theme-toggle:hover {
+  box-shadow: 0 0 18px rgba(98,189,208,0.18);
+}
+
+.toggle-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 2.5px;
+  color: var(--toggle-text);
+  text-transform: uppercase;
+  user-select: none;
+  transition: color var(--t);
+  min-width: 32px;
+}
+
+/* pill */
+.toggle-pill {
+  width: 38px; height: 20px;
+  border-radius: 10px;
+  background: var(--pill-bg);
+  position: relative;
+  flex-shrink: 0;
+  transition: background var(--t);
+}
+.toggle-pill::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+  transition: transform 0.35s cubic-bezier(0.34,1.4,0.64,1);
+}
+[data-theme="light"] .toggle-pill {
+  background: var(--pill-on);
+}
+[data-theme="light"] .toggle-pill::after {
+  transform: translateX(18px);
+}
+
+.toggle-icon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ════════════════════════════════════
+   TICKER
+════════════════════════════════════ */
+.ticker-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 34px;
+  background: var(--bg-ticker);
+  border-top: 1px solid var(--border-ticker);
+  display: flex;
+  align-items: center;
+  z-index: 100;
+  overflow: hidden;
+  opacity: 0;
+  animation: fadeUp 0.5s ease 3.2s forwards;
+  transition: background var(--t), border-color var(--t);
+  backdrop-filter: blur(8px);
+}
+
+.ticker-badge {
+  flex-shrink: 0;
+  padding: 0 18px 0 16px;
+  border-right: 1px solid var(--chip-border);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: border-color var(--t);
+}
+.ticker-badge .live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #42d899;
+  box-shadow: 0 0 8px #42d899;
+  animation: livePulse 1.4s ease-in-out infinite;
+}
+@keyframes livePulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.ticker-badge span {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #42d899;
+}
+
+.ticker-track { flex:1; overflow:hidden; height:100%; display:flex; align-items:center; }
+.ticker-inner  { display:flex; white-space:nowrap; will-change:transform; }
+
+.tick-item {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--tag-color);
+  padding: 0 24px;
+  letter-spacing: 0.5px;
+  transition: color var(--t);
+}
+.tick-item .sym { color:var(--text-sym); margin-right:6px; transition:color var(--t); }
+.tick-item .val { color:var(--text-val); font-weight:700; margin-right:5px; transition:color var(--t); }
+.tick-item .pos { color:#3ab87a; }
+.tick-item .neg { color:#c95555; }
+.tick-item .sep { color:var(--chip-border); margin:0 6px; }
+
+/* ════════════════════════════════════
+   STAGE
+════════════════════════════════════ */
+.stage-wrap {
+  position: fixed;
+  inset: 0; bottom: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* corner brackets */
+.corner {
+  position: absolute;
+  width: 22px; height: 22px;
+  border-color: var(--corner-color);
+  border-style: solid;
+  opacity: 0;
+  animation: fadeInHalf 0.4s ease 2.2s forwards;
+  transition: border-color var(--t);
+}
+.corner-tl { top:-14px; left:-14px; border-width:2px 0 0 2px; }
+.corner-br { bottom:-14px; right:-14px; border-width:0 2px 2px 0; }
+@keyframes fadeInHalf { to { opacity: 0.55; } }
+
+/* halo */
+.stage::before {
+  content: '';
+  position: absolute;
+  inset: -60px;
+  background: radial-gradient(ellipse at 35% 50%, var(--halo) 0%, transparent 65%);
+  animation: haloPulse 4.5s ease-in-out 1.6s infinite;
+  pointer-events: none;
+  transition: background var(--t);
+}
+@keyframes haloPulse {
+  0%,100% { opacity:0.6; transform:scale(1); }
+  50%      { opacity:1;   transform:scale(1.06); }
+}
+
+/* ════════════════════════════════════
+   SQUARES
+════════════════════════════════════ */
+.squares {
+  position: relative;
+  width: 240px; height: 280px;
+  flex-shrink: 0;
+  animation: float 4.2s ease-in-out 1.6s infinite;
+}
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+
+.sq {
+  position: absolute;
+  border-radius: 4px;
+  opacity: 0;
+  transform: scale(0.55) translateY(22px);
+}
+.sq-1 {
+  width:150px; height:160px;
+  background: var(--teal-1);
+  top:0; left:60px;
+  animation: sqPop 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.25s forwards;
+}
+/* notch — colour must track theme . THE LAST SQUARE*/
+.sq-1::after {
+  content: '';
+  position: absolute;
+  bottom:0; left:0;
+  width:57px; height:0px;
+  background: var(--notch-color);
+  border-radius: 3px;
+  transition: background var(--t);
+}
+/* THE MIDDLE SQUARE*/
+.sq-2 {
+  width:140px; height:155px;
+  background: var(--teal-2);
+  top:72px; left:20px;
+  animation: sqPop 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.52s forwards;
+}
+/* THE FRONT SQUARE*/
+.sq-3 {
+  width:130px; height:140px;
+  background: var(--teal-3);
+  top:148px; left:0;
+  animation: sqPop 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.79s forwards;
+}
+@keyframes sqPop { to { opacity:1; transform:scale(1) translateY(0); } }
+
+.sq::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.18) 50%, transparent 75%);
+  background-size: 220% 100%;
+  background-position: -120% 0;
+  animation: shimmer 3s ease 1.8s infinite;
+}
+@keyframes shimmer {
+  0%,100% { background-position:-120% 0; }
+  45%      { background-position:220% 0; }
+}
+
+/* ════════════════════════════════════
+   DIVIDER
+════════════════════════════════════ */
+.divider {
+  width:2px; align-self:stretch;
+  margin:0 30px;
+  position:relative; flex-shrink:0; overflow:hidden;
+}
+.divider-fill {
+  position:absolute; left:0; bottom:0;
+  width:2px; height:0;
+  background: linear-gradient(to top, transparent, var(--teal-2) 40%, var(--teal-3) 60%, transparent);
+  animation: divGrow 0.55s ease 1.15s forwards;
+}
+@keyframes divGrow { to { height:100%; } }
+
+.divider-dot {
+  position:absolute; left:-3px;
+  width:8px; height:8px; border-radius:50%;
+  background: var(--teal-3);
+  box-shadow: 0 0 10px var(--teal-3), 0 0 20px rgba(98,189,208,0.4);
+  opacity:0;
+  animation: dotTravel 2.6s ease-in-out 1.8s infinite;
+}
+@keyframes dotTravel {
+  0%   { top:0%;   opacity:0; }
+  8%   { opacity:1; }
+  92%  { opacity:1; }
+  100% { top:100%; opacity:0; }
+}
+
+/* ════════════════════════════════════
+   TEXT
+════════════════════════════════════ */
+.text-block { display:flex; flex-direction:column; gap:12px; }
+
+.brand-name {
+  font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', serif;
+  font-size: 70px; font-weight:400; letter-spacing:-1px;
+  color: var(--brand-color);
+  line-height:1; position:relative;
+  opacity:0; transform:translateX(32px);
+  animation: txtSlide 0.7s cubic-bezier(0.22,1,0.36,1) 1.25s forwards;
+  transition: color var(--t);
+}
+@keyframes txtSlide { to { opacity:1; transform:translateX(0); } }
+
+.brand-name .glow-sweep {
+  position:absolute; top:0; left:-80%;
+  width:55%; height:100%;
+  background: linear-gradient(90deg, transparent, rgba(98,189,208,0.12), transparent);
+  pointer-events:none;
+  animation: nameSweep 4s ease-in-out 2.8s infinite;
+}
+@keyframes nameSweep { 0%,100%{left:-60%} 50%{left:120%} }
+
+.brand-name .l {
+  display:inline-block;
+  transition: color 0.2s, text-shadow 0.2s, transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  animation: lPulseDark 3s ease-in-out infinite;
+}
+[data-theme="light"] .brand-name .l { animation-name: lPulseLight; }
+
+.brand-name .l:nth-child(1){animation-delay:1.85s}
+.brand-name .l:nth-child(2){animation-delay:1.95s}
+.brand-name .l:nth-child(3){animation-delay:2.05s}
+.brand-name .l:nth-child(4){animation-delay:2.15s}
+.brand-name .l:nth-child(5){animation-delay:2.25s}
+.brand-name .l:nth-child(6){animation-delay:2.35s}
+.brand-name .l:nth-child(7){animation-delay:2.45s}
+.brand-name .l:nth-child(8){animation-delay:2.55s}
+.brand-name .l:nth-child(9){animation-delay:2.65s}
+
+@keyframes lPulseDark  { 0%,100%{color:#2d6878} 35%{color:#62bdd0} }
+@keyframes lPulseLight { 0%,100%{color:#1a5060} 35%{color:#2d8a9e} }
+
+.brand-name .l.wave {
+  color: var(--cyan) !important;
+  text-shadow: 0 0 22px var(--cyan), 0 0 40px rgba(125,232,248,0.35);
+  transform: translateY(-9px);
+}
+
+.tagline {
+  font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', serif;
+  font-size:27px; font-weight:300; font-style:italic; letter-spacing:1px;
+  color: var(--tag-color);
+  opacity:0; transform:translateX(32px);
+  animation: txtSlide 0.7s cubic-bezier(0.22,1,0.36,1) 1.65s forwards;
+  position:relative;
+  transition: color var(--t);
+}
+.tagline::after {
+  content:''; display:block;
+  width:0; height:1px;
+  background: linear-gradient(to right, var(--teal-3), transparent);
+  margin-top:5px;
+  animation: ulGrow 0.9s ease 2.4s forwards;
+}
+@keyframes ulGrow { to { width:100%; } }
+
+/* ════════════════════════════════════
+   CHIPS
+════════════════════════════════════ */
+.chips {
+  display:flex; gap:10px; flex-wrap:wrap;
+  opacity:0; transform:translateY(10px);
+  animation: chipsIn 0.5s ease 2.6s forwards;
+}
+@keyframes chipsIn { to { opacity:1; transform:translateY(0); } }
+
+.chip {
+  font-family: 'Space Mono', monospace;
+  font-size:8.5px; letter-spacing:2.5px;
+  color: var(--chip-text);
+  border: 1px solid var(--chip-border);
+  padding:5px 13px; border-radius:2px;
+  background: var(--chip-bg);
+  position:relative; overflow:hidden; cursor:default;
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s, color var(--t);
+}
+.chip:hover {
+  background: var(--chip-hover-bg);
+  border-color: var(--chip-hover-brd);
+  box-shadow: 0 0 16px rgba(98,189,208,0.18);
+}
+.chip::after {
+  content:''; position:absolute;
+  top:0; left:-120%; width:80%; height:100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+  animation: chipShine 4s ease-in-out infinite;
+}
+.chip:nth-child(1)::after{animation-delay:3.0s}
+.chip:nth-child(2)::after{animation-delay:3.7s}
+.chip:nth-child(3)::after{animation-delay:4.4s}
+@keyframes chipShine { 0%,100%{left:-120%} 45%{left:140%} }
+
+/* ════════════════════════════════════
+   UTILITY
+════════════════════════════════════ */
+@keyframes fadeUp { 0%{opacity:0;transform:translateY(6px)} 100%{opacity:1;transform:translateY(0)} }
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<!-- ═══ TOGGLE ═══ -->
+<button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+  <span class="toggle-label" id="toggleLabel">DARK</span>
+  <div class="toggle-pill"></div>
+  <span class="toggle-icon" id="toggleIcon">🌙</span>
+</button>
+
+<!-- ═══ TICKER ═══ -->
+<div class="ticker-bar">
+  <div class="ticker-badge">
+    <div class="live-dot"></div>
+    <span>LIVE</span>
+  </div>
+  <div class="ticker-track">
+    <div class="ticker-inner" id="tickerInner"></div>
+  </div>
+</div>
+
+<!-- ═══ HERO ═══ -->
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-br"></div>
+
+    <div class="squares">
+      <div class="sq sq-1"></div>
+      <div class="sq sq-2"></div>
+      <div class="sq sq-3"></div>
+    </div>
+
+    <div class="divider">
+      <div class="divider-fill"></div>
+      <div class="divider-dot"></div>
+    </div>
+
+    <div class="text-block">
+      <div class="brand-name" id="brandName">
+        <span class="l">g</span><span class="l">r</span><span class="l">o</span><span class="l">w</span><span class="l">p</span><span class="l">h</span><span class="l">a</span><span class="l">s</span><span class="l">e</span> <span class="l">t</span><span class="l">e</span><span class="l">c</span><span class="l">h</span><span class="l">n</span><span class="l">o</span><span class="l">l</span><span class="l">o</span><span class="l">g</span><span class="l">i</span><span class="l">e</span><span class="l">s</span>
+        <div class="glow-sweep"></div>
+      </div>
+      <div class="tagline">inspiring the next</div>
+      <div class="chips">
+        <div class="chip">FINTECH</div>
+        <div class="chip">AI / ML</div>
+        <div class="chip">IT SOLUTIONS</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════
+   THEME TOGGLE
+════════════════════════════════════ */
+let isDark = true;
+const html        = document.documentElement;
+const toggleBtn   = document.getElementById('themeToggle');
+const toggleLabel = document.getElementById('toggleLabel');
+const toggleIcon  = document.getElementById('toggleIcon');
+
+toggleBtn.addEventListener('click', () => {
+  isDark = !isDark;
+  html.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  toggleLabel.textContent = isDark ? 'DARK'  : 'LIGHT';
+  toggleIcon.textContent  = isDark ? '🌙'    : '☀️';
+});
+
+/* ════════════════════════════════════
+   CANVAS
+════════════════════════════════════ */
+const canvas = document.getElementById('bgCanvas');
+const ctx    = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+/* Colour helper: adjusts tones for light theme */
+function col(r, g, b, a) {
+  if (!isDark) {
+    /* shift toward deeper ink tones on light bg */
+    return `rgba(${Math.max(r-40,0)},${Math.max(g-35,0)},${Math.max(b-30,0)},${a * 0.65})`;
+  }
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+/* ── NEURAL NETWORK ──────────────── */
+const NODE_COUNT = 25;
+const nodes = [];
+for (let i = 0; i < NODE_COUNT; i++) {
+  nodes.push({
+    x:  Math.random() * W,
+    y:  Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.38,
+    vy: (Math.random() - 0.5) * 0.38,
+    r:  1.5 + Math.random() * 2
+  });
+}
+
+function drawNeural() {
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const d  = Math.sqrt(dx*dx + dy*dy);
+      if (d < 180) {
+        ctx.beginPath();
+        ctx.strokeStyle = col(61, 138, 150, (1 - d/180) * 0.22);
+        ctx.lineWidth   = 0.6;
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[j].x, nodes[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  nodes.forEach(n => {
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    ctx.fillStyle = col(98, 189, 208, 0.38);
+    ctx.fill();
+    n.x += n.vx; n.y += n.vy;
+    if (n.x < 0 || n.x > W) n.vx *= -1;
+    if (n.y < 0 || n.y > H) n.vy *= -1;
+  });
+}
+
+/* ── MATRIX RAIN ─────────────────── */
+const RAIN_CHARS = ['0','1','0','1','∑','λ','∂','∞','A','I','$','%','#','□'];
+const COL_W = 18;
+let cols, drops = [];
+
+function initRain() {
+  cols  = Math.floor(W / COL_W);
+  drops = [];
+  for (let i = 0; i < cols; i++) {
+    drops.push({
+      y:     -(Math.random() * H),
+      speed: 0.6 + Math.random() * 1.4,
+      chars: Array.from({length:22}, () => RAIN_CHARS[Math.floor(Math.random()*RAIN_CHARS.length)]),
+      alpha: 0.04 + Math.random() * 0.07
+    });
+  }
+}
+initRain();
+window.addEventListener('resize', initRain);
+
+function drawRain() {
+  drops.forEach((d, ci) => {
+    const x = ci * COL_W + 4;
+    d.chars.forEach((ch, ri) => {
+      const yy = d.y - ri * 16;
+      if (yy < -20 || yy > H + 20) return;
+      ctx.font      = `12px 'Space Mono', monospace`;
+      ctx.fillStyle = col(98, 189, 208, d.alpha * (1 - ri / d.chars.length));
+      ctx.fillText(ch, x, yy);
+    });
+    d.y += d.speed;
+    if (d.y - d.chars.length * 16 > H) {
+      d.y     = -(Math.random() * H * 0.5);
+      d.speed = 0.6 + Math.random() * 1.4;
+      d.chars = d.chars.map(() => RAIN_CHARS[Math.floor(Math.random()*RAIN_CHARS.length)]);
+    }
+  });
+}
+
+/* ── FLOATING PARTICLES ──────────── */
+const SYMBOLS  = ['memo management system', 'document management system', 'dy-doc', 'credit administration system'];
+const PART_MAX = 10;
+const parts    = [];
+
+/* ── CONFIG ──
+   HOLD_FRAMES : how long each particle stays visible (60 fps ≈ 1 s)
+                 180 = 3 seconds
+   EXCL_R      : exclusion radius (px) around screen centre —
+                 particles spawn outside and deflect away if they drift in
+*/
+const HOLD_FRAMES = 120 + Math.random() * 120;   // 2-4 seconds because generally 60 fps = 1 second and Math.random gives (0, 0.1, 0.2 .... 1)
+const EXCL_R      = 340;   // exclusion radius around logo/centre
+
+function nearCenter(x, y) {
+  const dx = x - W / 2;
+  const dy = y - H / 2;
+  return dx * dx + dy * dy < EXCL_R * EXCL_R;
+}
+
+class Particle {
+  constructor() { this.init(); }
+  init() {
+    /* Spawn outside the exclusion zone (max 60 tries, then place on edge) */
+    let attempts = 0;
+    do {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      attempts++;
+    } while (nearCenter(this.x, this.y) && attempts < 60);
+
+    this.vx    = (Math.random() - 0.5) * 0.5;
+    this.vy    = -0.2 - Math.random() * 0.6;
+    this.alpha = 0;
+    this.tgt   = 0.3 + Math.random() * 0.5;
+    this.phase = 'in';
+    this.hold  = HOLD_FRAMES;
+    this.held  = 0;
+    this.sym   = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+    this.size  = 9 + Math.random() * 5;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+
+    /* Deflect away from centre exclusion zone */
+    if (nearCenter(this.x, this.y)) {
+      const dx   = this.x - W / 2;
+      const dy   = this.y - H / 2;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      this.vx += (dx / dist) * 0.18;
+      this.vy += (dy / dist) * 0.18;
+      /* Cap speed so particles don't rocket off-screen */
+      const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+      if (spd > 1.2) { this.vx = (this.vx / spd) * 1.2; this.vy = (this.vy / spd) * 1.2; }
+    }
+
+    if      (this.phase==='in')   { this.alpha+=0.018; if(this.alpha>=this.tgt){this.alpha=this.tgt;this.phase='hold';} }
+    else if (this.phase==='hold') { this.held++; if(this.held>this.hold)this.phase='out'; }
+    else                          { this.alpha-=0.015; if(this.alpha<=0)this.init(); }
+    if (this.x<0||this.x>W||this.y<-30) this.init();
+  }
+  draw() {
+    ctx.font      = `${this.size}px 'Space Mono', monospace`;
+    ctx.fillStyle = col(98, 189, 208, this.alpha);
+    ctx.fillText(this.sym, this.x, this.y);
+  }
+}
+
+for (let i = 0; i < PART_MAX; i++) {
+  const p = new Particle();
+  /* Ensure pre-seeded particles also start outside the exclusion zone */
+  let attempts = 0;
+  do { p.y = Math.random() * H; p.x = Math.random() * W; attempts++; }
+  while (nearCenter(p.x, p.y) && attempts < 60);
+  p.alpha = Math.random() * 0.3;
+  p.phase = 'hold';
+  parts.push(p);
+}
+
+/* ── MAIN LOOP ───────────────────── */
+function loop() {
+  ctx.clearRect(0, 0, W, H);
+  drawRain();
+  drawNeural();
+  parts.forEach(p => { p.update(); p.draw(); });
+  requestAnimationFrame(loop);
+}
+loop();
+
+/* ════════════════════════════════════
+   HOVER WAVE
+════════════════════════════════════ */
+function attachHoverWave() {
+  const bn = document.getElementById('brandName');
+  if (!bn) return;
+  const letters = bn.querySelectorAll('.l');
+  bn.addEventListener('mouseenter', () => {
+    letters.forEach((l, i) => {
+      setTimeout(() => {
+        l.classList.add('wave');
+        setTimeout(() => l.classList.remove('wave'), 420);
+      }, i * 60);
+    });
+  });
+}
+attachHoverWave();
+
+/* ════════════════════════════════════
+   AUTO-REPLAY every 7 s
+════════════════════════════════════ */
+function replayLogoAnim() {
+  const wrap     = document.querySelector('.stage-wrap');
+  const oldStage = document.getElementById('stage');
+  if (!oldStage) return;
+  const clone = oldStage.cloneNode(true);
+  wrap.replaceChild(clone, oldStage);
+  attachHoverWave();
+}
+setInterval(replayLogoAnim, 7000);
+
+/* ════════════════════════════════════
+   TICKER
+════════════════════════════════════ */
+const tickerData = [
+  { sym:'BTC/USD',     val:'94,210',   ch:'+2.4%', up:true  },
+  { sym:'ETH/USD',     val:'3,340',    ch:'+1.8%', up:true  },
+  { sym:'AI INDEX',    val:'5,821',    ch:'+3.1%', up:true  },
+  { sym:'NASDAQ',      val:'19,842',   ch:'-0.4%', up:false },
+  { sym:'FINTECH ETF', val:'112.8',    ch:'+1.2%', up:true  },
+  { sym:'S&P 500',     val:'5,629',    ch:'+0.7%', up:true  },
+  { sym:'GPU CLOUD',   val:'$2.84/hr', ch:'+0.3%', up:true  },
+  { sym:'ML OPS',      val:'482.6',    ch:'+4.2%', up:true  },
+  { sym:'DXY',         val:'104.2',    ch:'-0.2%', up:false },
+  { sym:'SOL/USD',     val:'152.4',    ch:'+5.1%', up:true  },
+];
+
+(function buildTicker() {
+  const inner = document.getElementById('tickerInner');
+  let html = '';
+  for (let r = 0; r < 3; r++) {
+    tickerData.forEach(d => {
+      html += `<span class="tick-item">
+        <span class="sym">${d.sym}</span>
+        <span class="val">${d.val}</span>
+        <span class="${d.up?'pos':'neg'}">${d.ch}</span>
+        <span class="sep">|</span>
+      </span>`;
+    });
+  }
+  inner.innerHTML = html;
+
+  let animStart = null;
+  const SPEED = 55;
+  function tick(ts) {
+    if (!animStart) animStart = ts;
+    const elapsed = (ts - animStart) / 1000;
+    const singleW = inner.scrollWidth / 3;
+    inner.style.transform = `translateX(-${(elapsed * SPEED) % singleW}px)`;
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

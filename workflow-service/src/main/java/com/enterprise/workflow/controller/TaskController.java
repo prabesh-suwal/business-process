@@ -23,6 +23,7 @@ import java.util.UUID;
 public class TaskController {
 
     private final WorkflowTaskService taskService;
+    private final com.enterprise.workflow.service.MovementHistoryService movementHistoryService;
 
     /**
      * Get tasks assigned to current user.
@@ -113,13 +114,28 @@ public class TaskController {
         return ResponseEntity.ok(taskService.getActiveExecutions(processInstanceId));
     }
 
+    // ==================== MOVEMENT HISTORY & BACK NAVIGATION ====================
+
     /**
-     * Get valid return points for a task.
+     * Get movement history and valid return points for a task.
+     * Uses ActionTimeline events instead of static BPMN paths, so it correctly
+     * handles loops, send-backs, and parallel branches.
+     */
+    @GetMapping("/{taskId}/movement-history")
+    public ResponseEntity<com.enterprise.workflow.dto.MovementHistoryDTO> getMovementHistory(
+            @PathVariable String taskId) {
+        return ResponseEntity.ok(movementHistoryService.getMovementHistory(taskId));
+    }
+
+    /**
+     * Get valid return points for a task (backward compatible alias).
+     * Returns simplified list built from movement history.
      */
     @GetMapping("/{taskId}/return-points")
-    public ResponseEntity<List<org.flowable.task.api.history.HistoricTaskInstance>> getReturnPoints(
+    public ResponseEntity<List<com.enterprise.workflow.dto.MovementHistoryDTO.ReturnPoint>> getReturnPoints(
             @PathVariable String taskId) {
-        return ResponseEntity.ok(taskService.getReturnableTasks(taskId));
+        com.enterprise.workflow.dto.MovementHistoryDTO history = movementHistoryService.getMovementHistory(taskId);
+        return ResponseEntity.ok(history.getReturnPoints());
     }
 
     /**
@@ -203,6 +219,16 @@ public class TaskController {
             taskService.completeTask(id, request, UUID.fromString(userId), userName, roleList);
         }
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Get eligible delegate candidates for a task.
+     * Returns candidate groups and candidate users from the Flowable task.
+     */
+    @GetMapping("/{id}/delegate-candidates")
+    public ResponseEntity<java.util.Map<String, Object>> getDelegateCandidates(@PathVariable String id) {
+        var candidates = taskService.getDelegateCandidates(id);
+        return ResponseEntity.ok(candidates);
     }
 
     /**

@@ -66,7 +66,8 @@ public class WorkflowConfigController {
                 request.getSlaConfig(),
                 request.getEscalationConfig(),
                 request.getViewerConfig(),
-                request.getConditionConfig());
+                request.getConditionConfig(),
+                request.getOutcomeConfig());
         return ResponseEntity.ok(toStepDto(config));
     }
 
@@ -191,6 +192,7 @@ public class WorkflowConfigController {
         dto.setEscalationConfig(config.getEscalationConfig());
         dto.setViewerConfig(config.getViewerConfig());
         dto.setConditionConfig(config.getConditionConfig());
+        dto.setOutcomeConfig(config.getOutcomeConfig());
         dto.setActive(config.getActive());
         return dto;
     }
@@ -219,6 +221,7 @@ public class WorkflowConfigController {
         private Map<String, Object> escalationConfig;
         private Map<String, Object> viewerConfig;
         private Map<String, Object> conditionConfig;
+        private Map<String, Object> outcomeConfig;
         private Boolean active;
     }
 
@@ -231,6 +234,7 @@ public class WorkflowConfigController {
         private Map<String, Object> escalationConfig;
         private Map<String, Object> viewerConfig;
         private Map<String, Object> conditionConfig;
+        private Map<String, Object> outcomeConfig;
     }
 
     @Data

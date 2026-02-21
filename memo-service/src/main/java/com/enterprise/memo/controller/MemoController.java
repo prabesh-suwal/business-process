@@ -28,6 +28,7 @@ public class MemoController {
 
     private final MemoService memoService;
     private final MemoAccessService memoAccessService;
+    private final com.enterprise.memo.client.WorkflowClient workflowClient;
 
     @PostMapping("/draft")
     public ResponseEntity<MemoDTO> createDraft(@Valid @RequestBody CreateMemoRequest request) {
@@ -135,5 +136,18 @@ public class MemoController {
 
         boolean canView = memoService.canViewMemo(id, userId, roleList, departmentId);
         return ResponseEntity.ok(canView);
+    }
+
+    /**
+     * Get execution history (timeline) for a memo's workflow.
+     * Proxies to workflow-service via WorkflowClient.
+     */
+    @GetMapping("/{id}/history")
+    public ResponseEntity<List<Map<String, Object>>> getHistory(@PathVariable UUID id) {
+        MemoDTO memo = memoService.getMemo(id);
+        if (memo.getProcessInstanceId() == null) {
+            return ResponseEntity.ok(List.of());
+        }
+        return ResponseEntity.ok(workflowClient.getTimeline(memo.getProcessInstanceId()));
     }
 }

@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -30,6 +31,14 @@ public class MemoTaskDTO {
     private LocalDateTime completedAt;
     private String candidateGroups;
     private String candidateUsers;
+
+    /**
+     * Inline outcome configuration from TaskConfiguration.config.outcomeConfig.
+     * Contains the available actions (options) for this task, with their labels,
+     * styles, requiresComment, confirmationMessage, icon, and sets.
+     * Set at runtime by getTasksForMemo to eliminate a separate API call.
+     */
+    private Map<String, Object> outcomeConfig;
 
     public static MemoTaskDTO fromEntity(MemoTask task) {
         return MemoTaskDTO.builder()

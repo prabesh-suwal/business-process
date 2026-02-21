@@ -81,6 +81,11 @@ public class WorkflowStepConfig {
         @Column(name = "condition_config", columnDefinition = "jsonb")
         private Map<String, Object> conditionConfig;
 
+        // Outcome configuration (action buttons / decision routing)
+        @JdbcTypeCode(SqlTypes.JSON)
+        @Column(name = "outcome_config", columnDefinition = "jsonb")
+        private Map<String, Object> outcomeConfig;
+
         @Column(nullable = false)
         @Builder.Default
         private Boolean active = true;

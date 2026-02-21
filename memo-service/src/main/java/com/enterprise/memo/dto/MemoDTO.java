@@ -26,4 +26,6 @@ public class MemoDTO {
     private UUID createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    private String processInstanceId;
 }

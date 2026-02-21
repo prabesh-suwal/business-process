@@ -107,8 +107,14 @@ public class MemoTask {
     public enum TaskAction {
         APPROVE,
         REJECT,
+        REJECTED,
+        ESCALATE,
         SEND_BACK,
+        SENT_BACK,
+        RETURNED_TO_INITIATOR,
+        DELEGATE,
         FORWARD,
-        CLARIFY
+        CLARIFY,
+        CANCELLED
     }
 }

@@ -1,5 +1,6 @@
 package com.enterprise.workflow.controller;
 
+import com.enterprise.workflow.dto.ActionTypeDefinition;
 import com.enterprise.workflow.dto.TaskConfigurationDTO;
 import com.enterprise.workflow.service.TaskConfigurationService;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,9 @@ import java.util.*;
  * Controller for task outcome configuration.
  * Provides runtime access to the outcome options configured for a task
  * in the workflow designer (variable name, option values/labels/styles).
+ *
+ * Also serves the predefined action type catalog that admins select from
+ * when configuring task outcomes.
  */
 @RestController
 @RequestMapping("/api/tasks")
@@ -25,6 +29,87 @@ public class TaskOutcomeController {
     private final org.flowable.engine.TaskService taskService;
     private final RuntimeService runtimeService;
     private final TaskConfigurationService taskConfigService;
+
+    /**
+     * Predefined action types that admins can select from.
+     * These represent system capabilities with pre-wired behavior.
+     */
+    private static final List<ActionTypeDefinition> PREDEFINED_ACTION_TYPES = List.of(
+            ActionTypeDefinition.builder()
+                    .actionType("APPROVE")
+                    .defaultLabel("Approve")
+                    .description("Approves the item and moves it to the next step in the workflow")
+                    .defaultStyle("success")
+                    .defaultSets(Map.of("decision", "APPROVED"))
+                    .requiresComment(false)
+                    .requiresTargetStep(false)
+                    .build(),
+            ActionTypeDefinition.builder()
+                    .actionType("REJECT")
+                    .defaultLabel("Reject")
+                    .description("Rejects the item and ends the workflow or routes to rejection handling")
+                    .defaultStyle("danger")
+                    .defaultSets(Map.of("decision", "REJECTED"))
+                    .requiresComment(true)
+                    .requiresTargetStep(false)
+                    .build(),
+            ActionTypeDefinition.builder()
+                    .actionType("ESCALATE")
+                    .defaultLabel("Escalate")
+                    .description("Escalates the item to a higher authority for review")
+                    .defaultStyle("info")
+                    .defaultSets(Map.of("decision", "ESCALATED"))
+                    .requiresComment(false)
+                    .requiresTargetStep(false)
+                    .build(),
+            ActionTypeDefinition.builder()
+                    .actionType("BACK_TO_INITIATOR")
+                    .defaultLabel("Return to Initiator")
+                    .description("Sends the item back to the original initiator for correction")
+                    .defaultStyle("warning")
+                    .defaultSets(Map.of("decision", "RETURNED_TO_INITIATOR"))
+                    .requiresComment(true)
+                    .requiresTargetStep(false)
+                    .build(),
+            ActionTypeDefinition.builder()
+                    .actionType("SEND_BACK")
+                    .defaultLabel("Send Back")
+                    .description("Sends the item back to the previous step it came from (based on execution history)")
+                    .defaultStyle("warning")
+                    .defaultSets(Map.of("decision", "SENT_BACK"))
+                    .requiresComment(true)
+                    .requiresTargetStep(false) // Auto-determined from history
+                    .build(),
+
+            ActionTypeDefinition.builder()
+                    .actionType("BACK_TO_STEP")
+                    .defaultLabel("Return to Step")
+                    .description("Sends the item back to a specific previous step chosen by the user")
+                    .defaultStyle("warning")
+                    .defaultSets(Map.of("decision", "SENT_BACK"))
+                    .requiresComment(false)
+                    .requiresTargetStep(true)
+                    .build(),
+            ActionTypeDefinition.builder()
+                    .actionType("DELEGATE")
+                    .defaultLabel("Delegate")
+                    .description("Reassigns the task to another user or group without changing the workflow flow")
+                    .defaultStyle("info")
+                    .defaultSets(Map.of())
+                    .requiresComment(false)
+                    .requiresTargetStep(false)
+                    .build());
+
+    /**
+     * Get the predefined action types that admins can select from
+     * when configuring task outcomes.
+     *
+     * Returns all available action types with their defaults.
+     */
+    @GetMapping("/action-types")
+    public ResponseEntity<List<ActionTypeDefinition>> getActionTypes() {
+        return ResponseEntity.ok(PREDEFINED_ACTION_TYPES);
+    }
 
     /**
      * Get the outcome configuration for a running task.
@@ -86,15 +171,22 @@ public class TaskOutcomeController {
             return ResponseEntity.noContent().build();
         }
 
-        // 4. Extract outcomeConfig from the config JSON
-        Map<String, Object> config = taskConfig.getConfig();
-        if (config == null || !config.containsKey("outcomeConfig")) {
+        // 4. Extract outcomeConfig from the dedicated field
+        Map<String, Object> outcomeConfig = taskConfig.getOutcomeConfig();
+        if (outcomeConfig == null || outcomeConfig.isEmpty()) {
+            // Fallback: check the generic config map for backward compatibility
+            Map<String, Object> genericConfig = taskConfig.getConfig();
+            if (genericConfig != null && genericConfig.containsKey("outcomeConfig")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> legacyOutcomeConfig = (Map<String, Object>) genericConfig.get("outcomeConfig");
+                outcomeConfig = legacyOutcomeConfig;
+            }
+        }
+
+        if (outcomeConfig == null || outcomeConfig.isEmpty()) {
             log.debug("No outcomeConfig in task config for {}", taskKey);
             return ResponseEntity.noContent().build();
         }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> outcomeConfig = (Map<String, Object>) config.get("outcomeConfig");
 
         log.info("Returning outcome config for task {} (key={}): {} options",
                 taskId, taskKey,

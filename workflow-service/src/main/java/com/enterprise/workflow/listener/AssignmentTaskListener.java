@@ -1,5 +1,7 @@
 package com.enterprise.workflow.listener;
 
+import com.enterprise.workflow.entity.ActionTimeline;
+import com.enterprise.workflow.repository.ActionTimelineRepository;
 import com.enterprise.workflow.service.AssignmentResolverService;
 import com.enterprise.workflow.service.AssignmentResolverService.AssignmentResult;
 import lombok.Data;
@@ -17,8 +19,9 @@ import java.util.*;
 
 /**
  * Flowable Task Listener that:
- * 1. Resolves assignment using LOCAL AssignmentResolverService (centralized)
- * 2. Notifies product-service (memo-service, lms-service) via webhook for
+ * 1. Records TASK_CREATED in ActionTimeline for history/duration tracking
+ * 2. Resolves assignment using LOCAL AssignmentResolverService (centralized)
+ * 3. Notifies product-service (memo-service, lms-service) via webhook for
  * business records
  * 
  * Assignment is now FULLY CENTRALIZED in workflow-service.
@@ -30,14 +33,17 @@ public class AssignmentTaskListener implements TaskListener {
 
     private final WebClient.Builder webClientBuilder;
     private final AssignmentResolverService assignmentResolver;
+    private final ActionTimelineRepository actionTimelineRepository;
 
     @Value("${memo.service.url:http://localhost:9008}")
     private String memoServiceUrl;
 
     public AssignmentTaskListener(@InternalWebClient WebClient.Builder webClientBuilder,
-            AssignmentResolverService assignmentResolver) {
+            AssignmentResolverService assignmentResolver,
+            ActionTimelineRepository actionTimelineRepository) {
         this.webClientBuilder = webClientBuilder;
         this.assignmentResolver = assignmentResolver;
+        this.actionTimelineRepository = actionTimelineRepository;
     }
 
     @Override
@@ -48,6 +54,22 @@ public class AssignmentTaskListener implements TaskListener {
         Map<String, Object> variables = delegateTask.getVariables();
 
         log.info("Task created: {} ({}) in process {}", taskName, taskKey, processInstanceId);
+
+        // Record TASK_CREATED in ActionTimeline for history and duration tracking
+        try {
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("taskDefinitionKey", taskKey);
+            ActionTimeline timelineEvent = ActionTimeline.builder()
+                    .processInstanceId(processInstanceId)
+                    .actionType(ActionTimeline.ActionType.TASK_CREATED)
+                    .taskId(delegateTask.getId())
+                    .taskName(taskName)
+                    .metadata(metadata)
+                    .build();
+            actionTimelineRepository.save(timelineEvent);
+        } catch (Exception e) {
+            log.warn("Failed to record TASK_CREATED timeline event: {}", e.getMessage());
+        }
 
         // Get processTemplateId from variables (set when process was started)
         UUID processTemplateId = getProcessTemplateId(variables);

@@ -23,8 +23,12 @@ import org.springframework.web.reactive.function.client.WebClient;
 import com.cas.common.webclient.InternalWebClient;
 
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -48,6 +52,7 @@ public class WorkflowTaskService {
     @Lazy
     private final ProcessAnalyzerService processAnalyzerService;
     private final AuditLogger auditLogger;
+    private final ActionValidationService actionValidationService;
 
     @Value("${memo.service.url:http://localhost:9008}")
     private String memoServiceUrl;
@@ -260,6 +265,14 @@ public class WorkflowTaskService {
 
     /**
      * Complete a task with variables.
+     * 
+     * ACTION-TYPE-AWARE ROUTING:
+     * - APPROVE / ESCALATE / (unknown): Complete normally → follows BPMN path
+     * - REJECT: Add comment, record audit, then TERMINATE the process
+     * - BACK_TO_INITIATOR: Move token back to the first user task in the process
+     * - BACK_TO_STEP: Handled separately via sendBackTask() endpoint
+     * 
+     * This allows admins to only draw the happy path (approve flow) in BPMN.
      */
     public void completeTask(String taskId, CompleteTaskRequest request, UUID userId, String userName,
             List<String> userRoles) {
@@ -271,47 +284,593 @@ public class WorkflowTaskService {
             throw new IllegalArgumentException("Task not found: " + taskId);
         }
 
-        // Add comment if provided
-        if (request.getComment() != null && !request.getComment().isBlank()) {
-            taskService.addComment(taskId, task.getProcessInstanceId(), request.getComment());
+        String processInstanceId = task.getProcessInstanceId();
+        String taskKey = task.getTaskDefinitionKey();
+        String actionLabel = request.getAction();
+        Map<String, Object> actionOptionMeta = null;
+        String actionType = null; // The programmatic action type (APPROVE, REJECT, etc.)
+
+        // --- Action Validation & Type Resolution ---
+        if (actionLabel != null && !actionLabel.isBlank()) {
+            UUID processTemplateId = resolveProcessTemplateId(processInstanceId);
+            if (processTemplateId != null) {
+                // Validate the submitted action is in configured options
+                actionValidationService.validateAction(processTemplateId, taskKey, actionLabel);
+                // Validate comment requirement
+                actionValidationService.validateComment(
+                        processTemplateId, taskKey, actionLabel, request.getComment());
+                // Get the full option metadata (includes actionType)
+                actionOptionMeta = actionValidationService.getActionOption(
+                        processTemplateId, taskKey, actionLabel);
+                if (actionOptionMeta != null) {
+                    actionType = (String) actionOptionMeta.get("actionType");
+                }
+            }
         }
 
-        // Complete the task with variables (outcome variable is injected upstream by
-        // memo-service)
+        // Add comment if provided
+        if (request.getComment() != null && !request.getComment().isBlank()) {
+            taskService.addComment(taskId, processInstanceId, request.getComment());
+        }
+
+        // --- Action-Type-Aware Routing ---
+        if ("REJECT".equalsIgnoreCase(actionType)) {
+            handleRejectAction(task, processInstanceId, request, userId, userName, userRoles,
+                    actionLabel, actionOptionMeta);
+        } else if ("BACK_TO_INITIATOR".equalsIgnoreCase(actionType)) {
+            handleBackToInitiatorAction(task, processInstanceId, request, userId, userName, userRoles,
+                    actionLabel, actionOptionMeta);
+        } else if ("SEND_BACK".equalsIgnoreCase(actionType)) {
+            handleSendBackAction(task, processInstanceId, request, userId, userName, userRoles,
+                    actionLabel, actionOptionMeta);
+        } else if ("BACK_TO_STEP".equalsIgnoreCase(actionType)) {
+            handleBackToStepAction(task, processInstanceId, request, userId, userName, userRoles,
+                    actionLabel, actionOptionMeta);
+        } else if ("DELEGATE".equalsIgnoreCase(actionType)) {
+            handleDelegateAction(task, processInstanceId, request, userId, userName, userRoles,
+                    actionLabel, actionOptionMeta);
+        } else {
+            // APPROVE, ESCALATE, or any unknown type → normal BPMN flow
+            handleApproveAction(task, processInstanceId, taskKey, request, userId, userName, userRoles,
+                    actionLabel, actionOptionMeta);
+        }
+    }
+
+    /**
+     * APPROVE / ESCALATE: Complete the task normally, following the drawn BPMN
+     * path.
+     */
+    private void handleApproveAction(Task task, String processInstanceId, String taskKey,
+            CompleteTaskRequest request, UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta) {
+
+        String taskId = task.getId();
+
+        // Complete the task with variables → Flowable follows the BPMN sequence flow
         if (request.getVariables() != null && !request.getVariables().isEmpty()) {
             taskService.complete(taskId, request.getVariables());
         } else {
             taskService.complete(taskId);
         }
 
+        recordCompletionAudit(task, processInstanceId, taskKey, userId, userName, userRoles,
+                actionLabel, actionOptionMeta, ActionTimeline.ActionType.TASK_COMPLETED, request.getComment());
+
+        notifyMemoServiceTaskCompleted(taskId, actionLabel != null ? actionLabel : "APPROVE", userName);
+        log.info("Task {} completed (APPROVE path) by user {}. Action: {}", taskId, userName, actionLabel);
+    }
+
+    /**
+     * REJECT: Terminate the entire process instance.
+     * The admin does NOT need to draw a reject path in BPMN.
+     */
+    private void handleRejectAction(Task task, String processInstanceId,
+            CompleteTaskRequest request, UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta) {
+
+        String taskId = task.getId();
+        String taskKey = task.getTaskDefinitionKey();
+        String reason = request.getComment() != null ? request.getComment() : "Rejected by " + userName;
+
+        // Capture active sibling tasks BEFORE termination (they'll be destroyed)
+        List<Task> activeSiblings = taskService.createTaskQuery()
+                .processInstanceId(processInstanceId)
+                .active()
+                .list()
+                .stream()
+                .filter(t -> !t.getId().equals(taskId))
+                .toList();
+
+        // Record audit BEFORE terminating (task still exists)
+        recordCompletionAudit(task, processInstanceId, taskKey, userId, userName, userRoles,
+                actionLabel, actionOptionMeta, ActionTimeline.ActionType.TASK_COMPLETED, request.getComment());
+
+        // Terminate the process instance — removes all active tasks
+        runtimeService.deleteProcessInstance(processInstanceId, "REJECTED: " + reason);
+
+        // Record TASK_CANCELLED for each sibling that was destroyed by termination
+        for (Task sibling : activeSiblings) {
+            ActionTimeline cancelEvent = ActionTimeline.builder()
+                    .processInstanceId(processInstanceId)
+                    .actionType(ActionTimeline.ActionType.TASK_CANCELLED)
+                    .taskId(sibling.getId())
+                    .taskName(sibling.getName())
+                    .actorId(userId)
+                    .actorName(userName)
+                    .metadata(Map.of(
+                            "reason", "Cancelled due to rejection of " + task.getName(),
+                            "triggeredBy", taskKey,
+                            "cancelledByReject", "true"))
+                    .build();
+            actionTimelineRepository.save(cancelEvent);
+            log.info("Recorded TASK_CANCELLED for sibling {} due to rejection", sibling.getName());
+        }
+
+        // Record PROCESS_CANCELLED event
+        ActionTimeline processCancelledEvent = ActionTimeline.builder()
+                .processInstanceId(processInstanceId)
+                .actionType(ActionTimeline.ActionType.PROCESS_CANCELLED)
+                .actorId(userId)
+                .actorName(userName)
+                .metadata(Map.of(
+                        "reason", reason,
+                        "rejectedBy", userName,
+                        "rejectedTask", task.getName() != null ? task.getName() : taskKey))
+                .build();
+        actionTimelineRepository.save(processCancelledEvent);
+
+        notifyMemoServiceTaskCompleted(taskId, "REJECTED", userName);
+        log.info("Task {} REJECTED by user {}. Process {} terminated.", taskId, userName, processInstanceId);
+    }
+
+    /**
+     * BACK_TO_INITIATOR: Move the token back to the very first user task in the
+     * process.
+     * Uses Flowable's changeActivityState API.
+     */
+    private void handleBackToInitiatorAction(Task task, String processInstanceId,
+            CompleteTaskRequest request, UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta) {
+
+        String taskId = task.getId();
+        String taskKey = task.getTaskDefinitionKey();
+
+        // Find the first user task in the process history
+        var historicTasks = historyService.createHistoricTaskInstanceQuery()
+                .processInstanceId(processInstanceId)
+                .orderByHistoricTaskInstanceStartTime().asc()
+                .list();
+
+        if (historicTasks.isEmpty()) {
+            throw new IllegalStateException("No historic tasks found for process " + processInstanceId);
+        }
+
+        String firstTaskKey = historicTasks.get(0).getTaskDefinitionKey();
+        log.info("BACK_TO_INITIATOR: Moving from {} to first task {}", taskKey, firstTaskKey);
+
+        // Record audit BEFORE moving (task still exists at current position)
+        recordCompletionAudit(task, processInstanceId, taskKey, userId, userName, userRoles,
+                actionLabel, actionOptionMeta, ActionTimeline.ActionType.valueOf("TASK_SENT_BACK"),
+                request.getComment());
+
+        // Set context variables
+        runtimeService.setVariable(processInstanceId, "returnedToInitiator", true);
+        runtimeService.setVariable(processInstanceId, "returnReason",
+                request.getComment() != null ? request.getComment() : "Returned by " + userName);
+        runtimeService.setVariable(processInstanceId, "returnedBy", userName);
+
+        // Move token back to the first user task
+        runtimeService.createChangeActivityStateBuilder()
+                .processInstanceId(processInstanceId)
+                .moveActivityIdTo(taskKey, firstTaskKey)
+                .changeState();
+
+        notifyMemoServiceTaskCompleted(taskId, "RETURNED_TO_INITIATOR", userName);
+        log.info("Task {} sent back to initiator (first task: {}) by user {}",
+                taskId, firstTaskKey, userName);
+    }
+
+    /**
+     * SEND_BACK: Move the token back to the correct previous step(s).
+     *
+     * Gateway-aware logic:
+     * - After a join gateway → moves to ALL leaf user tasks in the fork-join scope
+     * (only those that actually executed)
+     * - Inside a gateway branch → moves to the user task before the enclosing fork
+     * - Otherwise → moves to the most recently completed task (naive fallback)
+     *
+     * Also auto-assigns the previous user/claimer on the newly created task(s).
+     */
+    private void handleSendBackAction(Task task, String processInstanceId,
+            CompleteTaskRequest request, UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta) {
+
+        String taskId = task.getId();
+        String taskKey = task.getTaskDefinitionKey();
+        String processDefinitionId = task.getProcessDefinitionId();
+
+        // Get completed task events from ActionTimeline
+        List<ActionTimeline> completedTaskEvents = actionTimelineRepository
+                .findByProcessInstanceIdAndActionTypeOrderByCreatedAtAsc(
+                        processInstanceId, ActionTimeline.ActionType.TASK_COMPLETED);
+
+        // Resolve gateway-aware targets
+        var sendBackTarget = processAnalyzerService.resolveSendBackTargets(
+                processDefinitionId, taskKey, processInstanceId, completedTaskEvents);
+
+        if (sendBackTarget.targetTaskKeys().isEmpty()) {
+            throw new IllegalStateException(
+                    "Cannot send back: no previous step found for task " + taskKey);
+        }
+
+        log.info("SEND_BACK: Moving from {} to targets {} (multiTarget={})",
+                taskKey, sendBackTarget.targetTaskKeys(), sendBackTarget.multiTarget());
+
+        // Record audit BEFORE moving — include sentBackTo in metadata
+        Map<String, Object> extraMeta = new java.util.HashMap<>();
+        if (actionOptionMeta != null)
+            extraMeta.putAll(actionOptionMeta);
+        extraMeta.put("sentBackFrom", taskKey);
+        extraMeta.put("sentBackTo", sendBackTarget.targetTaskKeys());
+        recordCompletionAudit(task, processInstanceId, taskKey, userId, userName, userRoles,
+                actionLabel, extraMeta, ActionTimeline.ActionType.TASK_SENT_BACK, request.getComment());
+
+        // Set context variables
+        runtimeService.setVariable(processInstanceId, "sentBack", true);
+        runtimeService.setVariable(processInstanceId, "sentBackFrom", taskKey);
+        runtimeService.setVariable(processInstanceId, "sentBackReason",
+                request.getComment() != null ? request.getComment() : "Sent back by " + userName);
+        runtimeService.setVariable(processInstanceId, "sentBackBy", userName);
+
+        // Move token(s)
+        if (sendBackTarget.multiTarget()) {
+            // Multi-target: move to multiple activities (after join gateway)
+            runtimeService.createChangeActivityStateBuilder()
+                    .processInstanceId(processInstanceId)
+                    .moveSingleActivityIdToActivityIds(taskKey, sendBackTarget.targetTaskKeys())
+                    .changeState();
+        } else {
+            String targetKey = sendBackTarget.targetTaskKeys().get(0);
+
+            // Smart cancellation: walk through enclosing gateways layer by layer.
+            // Only cancel active siblings when the target is OUTSIDE a gateway scope
+            // (i.e., we're crossing backwards past a fork).
+            List<Task> activeTasks = taskService.createTaskQuery()
+                    .processInstanceId(processInstanceId)
+                    .active()
+                    .list();
+
+            List<String> activityIdsToMove = new ArrayList<>();
+            activityIdsToMove.add(taskKey); // always include the current task
+            List<String> siblingTaskIdsToNotify = new ArrayList<>();
+            List<Task> siblingTasks = new ArrayList<>();
+
+            // Walk through enclosing gateways from innermost to outermost
+            String currentElementKey = taskKey;
+            Set<String> alreadyCancelledKeys = new HashSet<>();
+            alreadyCancelledKeys.add(taskKey); // don't cancel yourself
+
+            while (true) {
+                String enclosingForkId = processAnalyzerService
+                        .findEnclosingParallelGateway(processDefinitionId, currentElementKey);
+
+                if (enclosingForkId == null)
+                    break;
+
+                Set<String> gatewayTasks = processAnalyzerService
+                        .getTasksInGatewayScope(processDefinitionId, enclosingForkId);
+
+                if (gatewayTasks.contains(targetKey)) {
+                    // Target is INSIDE this gateway scope → no crossing → no cancellation
+                    log.info("SEND_BACK: Target {} is inside gateway {} scope — no sibling cancellation",
+                            targetKey, enclosingForkId);
+                    break;
+                } else {
+                    // Target is OUTSIDE this gateway scope → crossing the fork
+                    // → cancel all active tasks in this scope (except current task and already
+                    // cancelled)
+                    log.info("SEND_BACK: Target {} is outside gateway {} scope — cancelling active descendants",
+                            targetKey, enclosingForkId);
+
+                    for (Task activeTask : activeTasks) {
+                        String activeKey = activeTask.getTaskDefinitionKey();
+                        if (!alreadyCancelledKeys.contains(activeKey) && gatewayTasks.contains(activeKey)) {
+                            activityIdsToMove.add(activeKey);
+                            siblingTaskIdsToNotify.add(activeTask.getId());
+                            siblingTasks.add(activeTask);
+                            alreadyCancelledKeys.add(activeKey);
+                            log.info("SEND_BACK: Cancelling task {} ({}) — inside crossed gateway {}",
+                                    activeTask.getId(), activeKey, enclosingForkId);
+                        }
+                    }
+
+                    // Move up to check outer gateways (for nested gateway cases)
+                    currentElementKey = enclosingForkId;
+                }
+            }
+
+            // Execute the move
+            if (activityIdsToMove.size() > 1) {
+                // Multi-activity move (current task + cancelled siblings)
+                runtimeService.createChangeActivityStateBuilder()
+                        .processInstanceId(processInstanceId)
+                        .moveActivityIdsToSingleActivityId(activityIdsToMove, targetKey)
+                        .changeState();
+            } else {
+                // Simple single move (no siblings to cancel)
+                runtimeService.createChangeActivityStateBuilder()
+                        .processInstanceId(processInstanceId)
+                        .moveActivityIdTo(taskKey, targetKey)
+                        .changeState();
+            }
+
+            // Notify memo-service about cancelled sibling tasks
+            for (String siblingId : siblingTaskIdsToNotify) {
+                notifyMemoServiceTaskCompleted(siblingId, "CANCELLED", userName);
+            }
+
+            // Record TASK_CANCELLED in ActionTimeline for each cancelled sibling
+            for (Task siblingTask : siblingTasks) {
+                ActionTimeline cancelEvent = ActionTimeline.builder()
+                        .processInstanceId(processInstanceId)
+                        .actionType(ActionTimeline.ActionType.TASK_CANCELLED)
+                        .taskId(siblingTask.getId())
+                        .taskName(siblingTask.getName())
+                        .actorId(userId)
+                        .actorName(userName)
+                        .metadata(Map.of(
+                                "reason", "Cancelled due to send-back of " + task.getName(),
+                                "triggeredBy", taskKey,
+                                "cancelledBySendBack", "true"))
+                        .build();
+                actionTimelineRepository.save(cancelEvent);
+                log.info("Recorded TASK_CANCELLED for sibling {} in timeline", siblingTask.getName());
+            }
+        }
+
+        // Notify memo-service about newly created tasks (changeState doesn't fire
+        // AssignmentTaskListener)
+        notifyMemoServiceNewTasks(processInstanceId, sendBackTarget.targetTaskKeys());
+
+        // Auto-assign previous users on newly created tasks
+        autoAssignPreviousUsers(processInstanceId, sendBackTarget);
+
+        notifyMemoServiceTaskCompleted(taskId, "SENT_BACK", userName);
+        log.info("Task {} sent back to {} by user {}", taskId, sendBackTarget.targetTaskKeys(), userName);
+    }
+
+    /**
+     * BACK_TO_STEP: Move the token to a specific step chosen by the user.
+     * The target step comes from the variables.targetStep variable,
+     * set by the frontend step-picker dialog.
+     *
+     * Enhanced: stores sentBackFrom/sentBackTo in audit, auto-assigns previous
+     * user.
+     */
+    private void handleBackToStepAction(Task task, String processInstanceId,
+            CompleteTaskRequest request, UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta) {
+
+        String taskId = task.getId();
+        String taskKey = task.getTaskDefinitionKey();
+
+        // Get target step from variables
+        String targetStep = null;
+        if (request.getVariables() != null) {
+            targetStep = (String) request.getVariables().get("targetStep");
+        }
+
+        if (targetStep == null || targetStep.isBlank()) {
+            throw new IllegalArgumentException(
+                    "BACK_TO_STEP action requires 'targetStep' variable (target task definition key)");
+        }
+
+        log.info("BACK_TO_STEP: Moving from {} to user-selected step {}", taskKey, targetStep);
+
+        // Record audit BEFORE moving — include jump tracking metadata
+        Map<String, Object> extraMeta = new java.util.HashMap<>();
+        if (actionOptionMeta != null)
+            extraMeta.putAll(actionOptionMeta);
+        extraMeta.put("sentBackFrom", taskKey);
+        extraMeta.put("sentBackTo", List.of(targetStep));
+        recordCompletionAudit(task, processInstanceId, taskKey, userId, userName, userRoles,
+                actionLabel, extraMeta, ActionTimeline.ActionType.TASK_SENT_BACK, request.getComment());
+
+        // Set context variables
+        runtimeService.setVariable(processInstanceId, "sentBack", true);
+        runtimeService.setVariable(processInstanceId, "sentBackFrom", taskKey);
+        runtimeService.setVariable(processInstanceId, "sentBackTo", targetStep);
+        runtimeService.setVariable(processInstanceId, "sentBackReason",
+                request.getComment() != null ? request.getComment() : "Sent back by " + userName);
+        runtimeService.setVariable(processInstanceId, "sentBackBy", userName);
+
+        // Move token to the selected step
+        runtimeService.createChangeActivityStateBuilder()
+                .processInstanceId(processInstanceId)
+                .moveActivityIdTo(taskKey, targetStep)
+                .changeState();
+
+        // Notify memo-service about newly created tasks
+        notifyMemoServiceNewTasks(processInstanceId, List.of(targetStep));
+
+        // Auto-assign previous user — look up from ActionTimeline
+        List<ActionTimeline> completedTaskEvents = actionTimelineRepository
+                .findByProcessInstanceIdAndActionTypeOrderByCreatedAtAsc(
+                        processInstanceId, ActionTimeline.ActionType.TASK_COMPLETED);
+        Map<String, String> actorIds = new java.util.HashMap<>();
+        Map<String, String> actorNames = new java.util.HashMap<>();
+        for (int i = completedTaskEvents.size() - 1; i >= 0; i--) {
+            var event = completedTaskEvents.get(i);
+            Map<String, Object> meta = event.getMetadata();
+            if (meta == null)
+                continue;
+            String tKey = (String) meta.get("taskDefinitionKey");
+            if (targetStep.equals(tKey) && !actorIds.containsKey(tKey)) {
+                if (event.getActorId() != null)
+                    actorIds.put(tKey, event.getActorId().toString());
+                if (event.getActorName() != null)
+                    actorNames.put(tKey, event.getActorName());
+            }
+        }
+        var target = new ProcessAnalyzerService.SendBackTarget(
+                List.of(targetStep), false, actorIds, actorNames);
+        autoAssignPreviousUsers(processInstanceId, target);
+
+        notifyMemoServiceTaskCompleted(taskId, "SENT_BACK", userName);
+        log.info("Task {} sent back to step {} by user {}", taskId, targetStep, userName);
+    }
+
+    /**
+     * Auto-assign the previous user/claimer on newly created tasks after a
+     * send-back.
+     * Looks up active tasks in the process and matches them against the
+     * SendBackTarget's
+     * previous actor info.
+     */
+    private void autoAssignPreviousUsers(String processInstanceId,
+            ProcessAnalyzerService.SendBackTarget sendBackTarget) {
+        try {
+            // Query active tasks in the process instance
+            List<Task> activeTasks = taskService.createTaskQuery()
+                    .processInstanceId(processInstanceId)
+                    .active()
+                    .list();
+
+            for (Task activeTask : activeTasks) {
+                String taskDefKey = activeTask.getTaskDefinitionKey();
+                String previousActorId = sendBackTarget.previousActorIds().get(taskDefKey);
+                String previousActorName = sendBackTarget.previousActorNames().get(taskDefKey);
+
+                if (previousActorId != null && activeTask.getAssignee() == null) {
+                    taskService.setAssignee(activeTask.getId(), previousActorId);
+                    log.info("Auto-assigned task {} ({}) to previous user {} ({})",
+                            activeTask.getId(), taskDefKey, previousActorName, previousActorId);
+                }
+            }
+        } catch (Exception e) {
+            // Auto-assignment is best-effort — don't fail the send-back
+            log.warn("Failed to auto-assign previous users: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * DELEGATE: Reassign the task to another user or group.
+     * Does NOT change the workflow flow — the task stays at the same step.
+     */
+    private void handleDelegateAction(Task task, String processInstanceId,
+            CompleteTaskRequest request, UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta) {
+
+        String taskId = task.getId();
+        String taskKey = task.getTaskDefinitionKey();
+
+        // Get delegate target from variables
+        String delegateTo = null;
+        if (request.getVariables() != null) {
+            delegateTo = (String) request.getVariables().get("delegateTo");
+        }
+
+        if (delegateTo == null || delegateTo.isBlank()) {
+            throw new IllegalArgumentException("DELEGATE action requires 'delegateTo' variable (user ID or group ID)");
+        }
+
+        log.info("DELEGATE: Reassigning task {} from {} to {}", taskKey, userName, delegateTo);
+
+        // Add comment if provided
+        if (request.getComment() != null && !request.getComment().isBlank()) {
+            taskService.addComment(taskId, processInstanceId,
+                    "Delegated by " + userName + ": " + request.getComment());
+        }
+
+        // Delegate the task using Flowable API
+        taskService.delegateTask(taskId, delegateTo);
+
         // Record in timeline
+        Map<String, Object> timelineMetadata = new java.util.HashMap<>();
+        timelineMetadata.put("taskDefinitionKey", taskKey);
+        timelineMetadata.put("action", actionLabel);
+        timelineMetadata.put("actionType", "DELEGATE");
+        timelineMetadata.put("delegatedTo", delegateTo);
+        timelineMetadata.put("delegatedBy", userName);
+
         ActionTimeline timelineEvent = ActionTimeline.builder()
-                .processInstanceId(task.getProcessInstanceId())
-                .actionType(ActionTimeline.ActionType.TASK_COMPLETED)
+                .processInstanceId(processInstanceId)
+                .actionType(ActionTimeline.ActionType.TASK_DELEGATED)
                 .taskId(taskId)
                 .taskName(task.getName())
                 .actorId(userId)
                 .actorName(userName)
                 .actorRoles(userRoles)
-                .metadata(Map.of(
-                        "approved", request.isApproved(),
-                        "hasComment", request.getComment() != null))
+                .metadata(timelineMetadata)
                 .build();
         actionTimelineRepository.save(timelineEvent);
 
-        // Audit log
+        log.info("Task {} delegated to {} by user {}", taskId, delegateTo, userName);
+    }
+
+    /**
+     * Record completion in ActionTimeline and audit log.
+     */
+    private void recordCompletionAudit(Task task, String processInstanceId, String taskKey,
+            UUID userId, String userName, List<String> userRoles,
+            String actionLabel, Map<String, Object> actionOptionMeta,
+            ActionTimeline.ActionType timelineActionType, String comment) {
+
+        Map<String, Object> timelineMetadata = new java.util.HashMap<>();
+        timelineMetadata.put("taskDefinitionKey", taskKey);
+        if (actionLabel != null) {
+            timelineMetadata.put("action", actionLabel);
+        }
+        if (comment != null && !comment.isBlank()) {
+            timelineMetadata.put("comment", comment);
+        }
+        if (actionOptionMeta != null) {
+            timelineMetadata.put("actionType", actionOptionMeta.get("actionType"));
+            timelineMetadata.put("actionConfig", actionOptionMeta);
+        }
+
+        ActionTimeline timelineEvent = ActionTimeline.builder()
+                .processInstanceId(processInstanceId)
+                .actionType(timelineActionType)
+                .taskId(task.getId())
+                .taskName(task.getName())
+                .actorId(userId)
+                .actorName(userName)
+                .actorRoles(userRoles)
+                .metadata(timelineMetadata)
+                .build();
+        actionTimelineRepository.save(timelineEvent);
+
+        String actionForAudit = actionLabel != null ? actionLabel : "COMPLETE";
         auditLogger.log()
                 .eventType(AuditEventType.COMPLETE)
                 .action("Completed workflow task")
                 .module("WORKFLOW")
-                .entity("TASK", taskId)
-                .remarks("Task: " + task.getName() + ", Approved: " + request.isApproved())
+                .entity("TASK", task.getId())
+                .remarks("Task: " + task.getName() + ", Action: " + actionForAudit)
                 .success();
+    }
 
-        // Notify memo-service of task completion
-        notifyMemoServiceTaskCompleted(taskId, request.isApproved() ? "APPROVE" : "REJECT", userName);
-
-        log.info("Task {} completed by user {}. Approved: {}", taskId, userName, request.isApproved());
+    /**
+     * Resolve the processTemplateId from Flowable process variables.
+     * Returns null if not found (backward compatibility with processes
+     * started before processTemplateId was tracked).
+     */
+    private UUID resolveProcessTemplateId(String processInstanceId) {
+        try {
+            Object templateIdVar = runtimeService.getVariable(processInstanceId, "processTemplateId");
+            if (templateIdVar == null) {
+                log.debug("No processTemplateId variable for process {}", processInstanceId);
+                return null;
+            }
+            return templateIdVar instanceof UUID
+                    ? (UUID) templateIdVar
+                    : UUID.fromString(templateIdVar.toString());
+        } catch (Exception e) {
+            log.warn("Failed to resolve processTemplateId for process {}: {}",
+                    processInstanceId, e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -608,6 +1167,44 @@ public class WorkflowTaskService {
     /**
      * Delegate a task to another user.
      */
+    /**
+     * Get delegate candidates for a task.
+     * Returns candidate groups and candidate users from the Flowable task's
+     * identity links.
+     */
+    public Map<String, Object> getDelegateCandidates(String taskId) {
+        Task task = taskService.createTaskQuery()
+                .taskId(taskId)
+                .singleResult();
+
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + taskId);
+        }
+
+        // Get identity links (candidate groups and users)
+        var identityLinks = taskService.getIdentityLinksForTask(taskId);
+
+        List<String> candidateGroups = identityLinks.stream()
+                .filter(link -> "candidate".equals(link.getType()) && link.getGroupId() != null)
+                .map(link -> link.getGroupId())
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+
+        List<String> candidateUsers = identityLinks.stream()
+                .filter(link -> "candidate".equals(link.getType()) && link.getUserId() != null)
+                .map(link -> link.getUserId())
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("taskId", taskId);
+        result.put("taskName", task.getName());
+        result.put("candidateGroups", candidateGroups);
+        result.put("candidateUsers", candidateUsers);
+        result.put("currentAssignee", task.getAssignee());
+        return result;
+    }
+
     public void delegateTask(String taskId, String delegateTo, UUID delegatedBy, String delegatedByName) {
         Task task = taskService.createTaskQuery()
                 .taskId(taskId)
@@ -679,24 +1276,53 @@ public class WorkflowTaskService {
         }
 
         String currentActivityId = task.getTaskDefinitionKey();
+        String processInstanceId = task.getProcessInstanceId();
         log.info("Sending back task {} from {} to {}", taskId, currentActivityId, targetActivityId);
 
-        // 1. Move token using Change Activity State
+        // 1. Record TASK_CANCELLED for sibling tasks that will be destroyed by
+        // moveActivityIdTo
+        // moveActivityIdTo cancels all active tasks in the process except the target
+        List<Task> allActiveTasks = taskService.createTaskQuery()
+                .processInstanceId(processInstanceId)
+                .list();
+        for (Task siblingTask : allActiveTasks) {
+            // Skip the task being sent back (it gets TASK_SENT_BACK, not TASK_CANCELLED)
+            if (siblingTask.getId().equals(taskId))
+                continue;
+
+            log.info("Recording TASK_CANCELLED for sibling task {} ({}) due to send-back",
+                    siblingTask.getId(), siblingTask.getName());
+            ActionTimeline cancelEvent = ActionTimeline.builder()
+                    .processInstanceId(processInstanceId)
+                    .actionType(ActionTimeline.ActionType.TASK_CANCELLED)
+                    .taskId(siblingTask.getId())
+                    .taskName(siblingTask.getName())
+                    .actorId(UUID.fromString(userId))
+                    .actorName(userName)
+                    .metadata(Map.of(
+                            "reason", "Cancelled due to send-back of " + task.getName(),
+                            "triggeredBy", currentActivityId,
+                            "cancelledBySendBack", true))
+                    .build();
+            actionTimelineRepository.save(cancelEvent);
+        }
+
+        // 2. Move token using Change Activity State
         runtimeService.createChangeActivityStateBuilder()
-                .processInstanceId(task.getProcessInstanceId())
+                .processInstanceId(processInstanceId)
                 .moveActivityIdTo(currentActivityId, targetActivityId)
                 .changeState();
 
-        // 2. Set variables for context
+        // 3. Set variables for context
         taskService.setVariable(taskId, "sendBackReason", reason);
         taskService.setVariable(taskId, "sendBackFrom", currentActivityId);
         taskService.setVariable(taskId, "sendBackTo", targetActivityId);
         taskService.setVariable(taskId, "isSendBack", true);
 
-        // 3. Record in timeline
+        // 4. Record TASK_SENT_BACK in timeline
         ActionTimeline timelineEvent = ActionTimeline.builder()
-                .processInstanceId(task.getProcessInstanceId())
-                .actionType(ActionTimeline.ActionType.valueOf("TASK_SENT_BACK")) // Needs enum update
+                .processInstanceId(processInstanceId)
+                .actionType(ActionTimeline.ActionType.valueOf("TASK_SENT_BACK"))
                 .taskId(taskId)
                 .taskName(task.getName())
                 .actorId(UUID.fromString(userId))
@@ -1043,26 +1669,128 @@ public class WorkflowTaskService {
 
     /**
      * Notify memo-service that a task has been completed.
+     * Includes retry logic for resilience.
      */
     private void notifyMemoServiceTaskCompleted(String taskId, String action, String completedBy) {
+        Map<String, String> payload = Map.of(
+                "taskId", taskId,
+                "action", action,
+                "completedBy", completedBy != null ? completedBy : "");
+
+        log.info("Notifying memo-service of task completion: taskId={}, action={}, completedBy={}",
+                taskId, action, completedBy);
+
+        int maxRetries = 2;
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                webClientBuilder.build()
+                        .post()
+                        .uri(memoServiceUrl + "/api/workflow-webhook/task-completed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(payload)
+                        .retrieve()
+                        .bodyToMono(Void.class)
+                        .block();
+
+                log.info("Successfully notified memo-service of task completion: {} (attempt {})",
+                        taskId, attempt + 1);
+                return;
+            } catch (Exception e) {
+                log.warn("Failed to notify memo-service (attempt {}/{}): taskId={}, error={}",
+                        attempt + 1, maxRetries + 1, taskId, e.getMessage(), e);
+                if (attempt < maxRetries) {
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        log.error("FAILED all retries to notify memo-service of task completion: taskId={}", taskId);
+    }
+
+    /**
+     * After a changeState() call (send-back), Flowable creates new tasks but
+     * does NOT fire the AssignmentTaskListener. We manually notify memo-service
+     * to create MemoTask records ONLY for the specified target tasks.
+     *
+     * @param processInstanceId the process instance
+     * @param targetTaskKeys    the BPMN task definition keys that were targets of
+     *                          the state change
+     */
+    private void notifyMemoServiceNewTasks(String processInstanceId, List<String> targetTaskKeys) {
         try {
-            Map<String, String> payload = Map.of(
-                    "taskId", taskId,
-                    "action", action,
-                    "completedBy", completedBy != null ? completedBy : "");
+            List<Task> activeTasks = taskService.createTaskQuery()
+                    .processInstanceId(processInstanceId)
+                    .active()
+                    .list();
 
-            webClientBuilder.build()
-                    .post()
-                    .uri(memoServiceUrl + "/api/workflow-webhook/task-completed")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(payload)
-                    .retrieve()
-                    .bodyToMono(Void.class)
-                    .block();
+            // Get memoId from process variables
+            Object memoIdObj = runtimeService.getVariable(processInstanceId, "memoId");
+            if (memoIdObj == null) {
+                log.warn("No memoId found in process variables, cannot notify memo-service of new tasks");
+                return;
+            }
+            String memoId = memoIdObj.toString();
 
-            log.info("Notified memo-service of task completion: {}", taskId);
+            // Only notify for tasks that match the target keys
+            Set<String> targetSet = new java.util.HashSet<>(targetTaskKeys);
+
+            for (Task activeTask : activeTasks) {
+                if (!targetSet.contains(activeTask.getTaskDefinitionKey())) {
+                    continue; // Skip tasks that aren't targets of this send-back
+                }
+
+                log.info("Notifying memo-service of new task: {} ({}) in process {}",
+                        activeTask.getName(), activeTask.getTaskDefinitionKey(), processInstanceId);
+
+                // Get candidates from Flowable identity links
+                List<String> candidateGroups = new ArrayList<>();
+                List<String> candidateUsers = new ArrayList<>();
+                try {
+                    var identityLinks = taskService.getIdentityLinksForTask(activeTask.getId());
+                    for (var link : identityLinks) {
+                        if ("candidate".equals(link.getType()) && link.getGroupId() != null) {
+                            candidateGroups.add(link.getGroupId());
+                        }
+                        if ("candidate".equals(link.getType()) && link.getUserId() != null) {
+                            candidateUsers.add(link.getUserId());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("Could not resolve identity links for task {}: {}", activeTask.getId(), e.getMessage());
+                }
+
+                // Send task-created webhook to memo-service
+                Map<String, Object> event = new HashMap<>();
+                event.put("taskId", activeTask.getId());
+                event.put("memoId", memoId);
+                event.put("taskDefinitionKey", activeTask.getTaskDefinitionKey());
+                event.put("taskName", activeTask.getName());
+                event.put("processInstanceId", processInstanceId);
+                event.put("candidateGroups", candidateGroups);
+                event.put("candidateUsers", candidateUsers);
+
+                try {
+                    webClientBuilder.build()
+                            .post()
+                            .uri(memoServiceUrl + "/api/workflow-webhook/task-created")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(event)
+                            .retrieve()
+                            .bodyToMono(Void.class)
+                            .block();
+                    log.info("Successfully notified memo-service of new task: {} ({})",
+                            activeTask.getId(), activeTask.getTaskDefinitionKey());
+                } catch (Exception e) {
+                    log.warn("Failed to notify memo-service of new task {}: {}",
+                            activeTask.getId(), e.getMessage());
+                }
+            }
         } catch (Exception e) {
-            log.warn("Failed to notify memo-service of task completion: {}", e.getMessage());
+            log.error("Error notifying memo-service of new tasks: {}", e.getMessage(), e);
         }
     }
 }
