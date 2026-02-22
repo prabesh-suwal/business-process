@@ -33,70 +33,99 @@ public class TaskController {
     private final com.enterprise.memo.repository.MemoRepository memoRepository;
 
     /**
-     * Get user's inbox (tasks assigned to them or their groups).
+     * Get user's inbox with pagination, sorting, and filtering.
      * Proxies to workflow-service and enriches with memo details
      * (subject, reference number, topic name).
      */
     @GetMapping("/inbox")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getInbox() {
-        log.debug("Getting inbox for user - headers auto-propagated via WebClient filter");
-        java.util.List<java.util.Map<String, Object>> tasks = workflowClient.getTaskInbox();
+    public ResponseEntity<java.util.Map<String, Object>> getInbox(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "createTime") String sortBy,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "desc") String sortDir,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String priority,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String search) {
 
-        // Enrich with memo details (subject, memoNumber, topicName)
-        if (tasks != null && !tasks.isEmpty()) {
-            // Collect all businessKeys (memo UUIDs) for batch lookup
-            java.util.Set<UUID> memoIds = new java.util.HashSet<>();
-            for (var task : tasks) {
-                Object bk = task.get("businessKey");
-                if (bk != null) {
-                    try {
-                        memoIds.add(UUID.fromString(bk.toString()));
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
+        log.debug("Getting inbox for user - page={}, size={}", page, size);
 
-            if (!memoIds.isEmpty()) {
-                // Batch lookup memos with topics eagerly loaded
-                java.util.Map<UUID, com.enterprise.memo.entity.Memo> memoMap = new java.util.HashMap<>();
+        // Forward pagination params to workflow-service
+        java.util.Map<String, Object> response = workflowClient.getTaskInbox(
+                page, size, sortBy, sortDir, priority, search);
+
+        // Enrich content items with memo details
+        enrichInboxContent(response);
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Enrich the content items inside the ApiResponse envelope with memo details.
+     */
+    @SuppressWarnings("unchecked")
+    private void enrichInboxContent(java.util.Map<String, Object> response) {
+        if (response == null)
+            return;
+
+        java.util.Map<String, Object> data = (java.util.Map<String, Object>) response.get("data");
+        if (data == null)
+            return;
+
+        java.util.List<java.util.Map<String, Object>> tasks = (java.util.List<java.util.Map<String, Object>>) data
+                .get("content");
+        if (tasks == null || tasks.isEmpty())
+            return;
+
+        // Collect all businessKeys (memo UUIDs) for batch lookup
+        java.util.Set<UUID> memoIds = new java.util.HashSet<>();
+        for (var task : tasks) {
+            Object bk = task.get("businessKey");
+            if (bk != null) {
                 try {
-                    var memos = memoRepository.findAllById(memoIds);
-                    for (var memo : memos) {
-                        memoMap.put(memo.getId(), memo);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to enrich inbox with memo details: {}", e.getMessage());
-                }
-
-                // Inject memo fields into each task
-                for (var task : tasks) {
-                    Object bk = task.get("businessKey");
-                    if (bk != null) {
-                        try {
-                            UUID memoId = UUID.fromString(bk.toString());
-                            var memo = memoMap.get(memoId);
-                            if (memo != null) {
-                                // Make task map mutable if needed
-                                java.util.Map<String, Object> enriched = new java.util.HashMap<>(task);
-                                enriched.put("subject", memo.getSubject());
-                                enriched.put("memoNumber", memo.getMemoNumber());
-                                try {
-                                    enriched.put("topicName", memo.getTopic().getName());
-                                } catch (Exception e) {
-                                    enriched.put("topicName", null);
-                                }
-                                task.clear();
-                                task.putAll(enriched);
-                            }
-                        } catch (Exception ignored) {
-                        }
-                    }
+                    memoIds.add(UUID.fromString(bk.toString()));
+                } catch (Exception ignored) {
                 }
             }
         }
 
-        return ResponseEntity.ok(tasks);
+        if (memoIds.isEmpty())
+            return;
+
+        // Batch lookup memos
+        java.util.Map<UUID, com.enterprise.memo.entity.Memo> memoMap = new java.util.HashMap<>();
+        try {
+            var memos = memoRepository.findAllById(memoIds);
+            for (var memo : memos) {
+                memoMap.put(memo.getId(), memo);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to enrich inbox with memo details: {}", e.getMessage());
+            return;
+        }
+
+        // Inject memo fields into each task
+        for (int i = 0; i < tasks.size(); i++) {
+            var task = tasks.get(i);
+            Object bk = task.get("businessKey");
+            if (bk != null) {
+                try {
+                    UUID memoId = UUID.fromString(bk.toString());
+                    var memo = memoMap.get(memoId);
+                    if (memo != null) {
+                        java.util.Map<String, Object> enriched = new java.util.HashMap<>(task);
+                        enriched.put("subject", memo.getSubject());
+                        enriched.put("memoNumber", memo.getMemoNumber());
+                        try {
+                            enriched.put("topicName", memo.getTopic().getName());
+                        } catch (Exception e) {
+                            enriched.put("topicName", null);
+                        }
+                        tasks.set(i, enriched);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     /**

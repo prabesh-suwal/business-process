@@ -337,7 +337,8 @@ export const WorkflowApi = {
 
 export const TaskApi = {
     // Task Inbox - routed through memo-service
-    getInbox: () => api.get('/memo/api/tasks/inbox').then(res => res.data),
+    getInbox: ({ page = 0, size = 10, sortBy = 'createTime', sortDir = 'desc', priority, search } = {}) =>
+        api.get('/memo/api/tasks/inbox', { params: { page, size, sortBy, sortDir, priority, search } }).then(res => res.data),
     getTask: (taskId) => api.get(`/memo/api/tasks/${taskId}`).then(res => res.data),
     claimTask: (taskId) => api.post(`/memo/api/tasks/${taskId}/claim`).then(res => res.data),
 

@@ -121,6 +121,96 @@ public class WorkflowTaskService {
     }
 
     /**
+     * Get the user's inbox with pagination, sorting, and filtering.
+     * Combines assigned + candidate tasks, then applies in-memory
+     * filtering, sorting, and pagination.
+     *
+     * @param userId   the user ID
+     * @param groups   the user's role/group IDs
+     * @param page     0-based page number
+     * @param size     items per page
+     * @param sortBy   field to sort by (createTime, priority, name)
+     * @param sortDir  sort direction (asc, desc)
+     * @param priority optional priority filter (HIGH, URGENT, NORMAL)
+     * @param search   optional search term (matches task name or process title)
+     * @return paginated task data
+     */
+    @Transactional(readOnly = true)
+    public com.cas.common.dto.PagedData<TaskDTO> getInboxPaged(
+            String userId, List<String> groups,
+            int page, int size,
+            String sortBy, String sortDir,
+            String priority, String search) {
+
+        // Combine assigned + candidate tasks
+        List<TaskDTO> assigned = getAssignedTasks(userId);
+        List<TaskDTO> candidate = getCandidateTasks(userId, groups);
+
+        List<TaskDTO> all = new ArrayList<>(assigned);
+        all.addAll(candidate);
+
+        // De-duplicate by task ID (task could appear in both lists)
+        all = all.stream()
+                .collect(java.util.stream.Collectors.toMap(TaskDTO::getId, t -> t, (a, b) -> a))
+                .values().stream()
+                .collect(java.util.stream.Collectors.toList());
+
+        // ── Filter ─────────────────────────────────────────────
+        if (priority != null && !priority.isBlank() && !"ALL".equalsIgnoreCase(priority)) {
+            int priorityValue = switch (priority.toUpperCase()) {
+                case "URGENT" -> 100;
+                case "HIGH" -> 75;
+                case "NORMAL" -> 50;
+                default -> -1;
+            };
+            if (priorityValue > 0) {
+                all = all.stream()
+                        .filter(t -> t.getPriority() != null && t.getPriority() == priorityValue)
+                        .collect(java.util.stream.Collectors.toList());
+            }
+        }
+
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase();
+            all = all.stream()
+                    .filter(t -> {
+                        String name = t.getName() != null ? t.getName().toLowerCase() : "";
+                        String title = t.getProcessTitle() != null ? t.getProcessTitle().toLowerCase() : "";
+                        String template = t.getProcessTemplateName() != null
+                                ? t.getProcessTemplateName().toLowerCase()
+                                : "";
+                        return name.contains(searchLower)
+                                || title.contains(searchLower)
+                                || template.contains(searchLower);
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        long totalElements = all.size();
+
+        // ── Sort ───────────────────────────────────────────────
+        java.util.Comparator<TaskDTO> comparator = switch (sortBy != null ? sortBy : "createTime") {
+            case "priority" -> java.util.Comparator.comparingInt(
+                    t -> t.getPriority() != null ? t.getPriority() : 0);
+            case "name" -> java.util.Comparator.comparing(
+                    t -> t.getName() != null ? t.getName() : "", String.CASE_INSENSITIVE_ORDER);
+            default -> java.util.Comparator.comparing(
+                    TaskDTO::getCreateTime, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()));
+        };
+        if ("desc".equalsIgnoreCase(sortDir) || sortDir == null) {
+            comparator = comparator.reversed();
+        }
+        all.sort(comparator);
+
+        // ── Paginate ───────────────────────────────────────────
+        int fromIndex = Math.min(page * size, all.size());
+        int toIndex = Math.min(fromIndex + size, all.size());
+        List<TaskDTO> pageContent = all.subList(fromIndex, toIndex);
+
+        return com.cas.common.dto.PagedData.of(pageContent, page, size, totalElements, true);
+    }
+
+    /**
      * Get tasks for a specific process instance.
      */
     @Transactional(readOnly = true)

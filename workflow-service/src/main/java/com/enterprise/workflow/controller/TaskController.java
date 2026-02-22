@@ -55,21 +55,32 @@ public class TaskController {
     }
 
     /**
-     * Get all tasks for current user (assigned + claimable).
+     * Get all tasks for current user (assigned + claimable) with pagination.
+     *
+     * @param page     page number (0-based, default 0)
+     * @param size     items per page (default 10)
+     * @param sortBy   sort field: createTime, priority, name (default createTime)
+     * @param sortDir  sort direction: asc, desc (default desc)
+     * @param priority filter by priority: NORMAL, HIGH, URGENT, ALL
+     * @param search   search term (matches task name, process title)
      */
     @GetMapping("/inbox")
-    public ResponseEntity<List<TaskDTO>> getInbox() {
+    public ResponseEntity<com.cas.common.dto.ApiResponse<com.cas.common.dto.PagedData<TaskDTO>>> getInbox(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createTime") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String priority,
+            @RequestParam(required = false) String search) {
+
         UserContext user = UserContextHolder.require();
         String userId = user.getUserId();
         List<String> roleList = new ArrayList<>(user.getRoleIds());
 
-        List<TaskDTO> assigned = taskService.getAssignedTasks(userId);
-        List<TaskDTO> claimable = taskService.getCandidateTasks(userId, roleList);
+        com.cas.common.dto.PagedData<TaskDTO> pagedData = taskService.getInboxPaged(
+                userId, roleList, page, size, sortBy, sortDir, priority, search);
 
-        // Combine and return
-        List<TaskDTO> inbox = new ArrayList<>(assigned);
-        inbox.addAll(claimable);
-        return ResponseEntity.ok(inbox);
+        return ResponseEntity.ok(com.cas.common.dto.ApiResponse.success(pagedData));
     }
 
     /**

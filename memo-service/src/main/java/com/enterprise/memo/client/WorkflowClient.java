@@ -221,19 +221,58 @@ public class WorkflowClient {
         }
 
         /**
-         * Get task inbox for a user (assigned + claimable tasks).
+         * Get task inbox for a user (assigned + claimable tasks) with pagination.
          * Headers are automatically propagated by UserContextWebClientFilter.
          */
-        public java.util.List<Map<String, Object>> getTaskInbox() {
-                log.debug("Getting task inbox via auto-propagated UserContext headers");
+        public Map<String, Object> getTaskInbox(int page, int size, String sortBy, String sortDir,
+                        String priority, String search) {
+                log.debug("Getting task inbox via auto-propagated UserContext headers (page={}, size={})", page, size);
 
                 return webClientBuilder.build()
                                 .get()
-                                .uri(workflowServiceUrl + "/api/tasks/inbox")
+                                .uri(workflowServiceUrl + "/api/tasks/inbox", uriBuilder -> uriBuilder
+                                                .queryParam("page", page)
+                                                .queryParam("size", size)
+                                                .queryParam("sortBy", sortBy)
+                                                .queryParam("sortDir", sortDir)
+                                                .queryParamIfPresent("priority",
+                                                                java.util.Optional.ofNullable(priority)
+                                                                                .filter(s -> !s.isBlank()))
+                                                .queryParamIfPresent("search",
+                                                                java.util.Optional.ofNullable(search)
+                                                                                .filter(s -> !s.isBlank()))
+                                                .build())
                                 .retrieve()
                                 .bodyToMono(
-                                                new org.springframework.core.ParameterizedTypeReference<java.util.List<Map<String, Object>>>() {
+                                                new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {
                                                 })
+                                .block();
+        }
+
+        /**
+         * Get task inbox (no pagination — backward compatible).
+         */
+        public java.util.List<Map<String, Object>> getTaskInboxAll() {
+                log.debug("Getting full task inbox via auto-propagated UserContext headers");
+
+                return webClientBuilder.build()
+                                .get()
+                                .uri(workflowServiceUrl + "/api/tasks/inbox?size=1000")
+                                .retrieve()
+                                .bodyToMono(
+                                                new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {
+                                                })
+                                .map(response -> {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> data = (Map<String, Object>) response.get("data");
+                                        if (data != null && data.get("content") != null) {
+                                                @SuppressWarnings("unchecked")
+                                                java.util.List<Map<String, Object>> content = (java.util.List<Map<String, Object>>) data
+                                                                .get("content");
+                                                return content;
+                                        }
+                                        return java.util.Collections.<Map<String, Object>>emptyList();
+                                })
                                 .block();
         }
 
