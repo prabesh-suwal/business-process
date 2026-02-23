@@ -50,6 +50,7 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**").authenticated()
 
                         // Everything else
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter,
                         org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)

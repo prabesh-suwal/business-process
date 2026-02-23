@@ -41,11 +41,18 @@ export default function TaskInbox() {
                 search: searchTerm || undefined,
             });
 
-            // Response is ApiResponse<PagedData<TaskDTO>>
-            if (response?.success && response?.data) {
-                setTasks(response.data.content || []);
-                setTotalElements(response.data.totalElements || 0);
-                setTotalPages(response.data.totalPages || 0);
+            // Interceptor unwraps ApiResponse — response is now the raw
+            // pass-through Map from memo-service (which itself contains the
+            // ApiResponse from workflow-service).  The memo endpoint has
+            // @RawResponse, so the outer layer is NOT double-wrapped.
+            // After interceptor unwrap: response = PagedData (content inside data.data)
+            // But since memo-service @RawResponse passes through the full ApiResponse
+            // from workflow-service, we need to handle both shapes:
+            const pagedData = response?.data ?? response;
+            if (pagedData?.content) {
+                setTasks(pagedData.content || []);
+                setTotalElements(pagedData.totalElements || 0);
+                setTotalPages(pagedData.totalPages || 0);
             } else {
                 // Fallback for unexpected shape
                 setTasks([]);

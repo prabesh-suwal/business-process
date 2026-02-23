@@ -28,6 +28,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/api/**").permitAll() // Gateway handles auth
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .addFilterAfter(userContextFilter(), UsernamePasswordAuthenticationFilter.class);
 

@@ -48,6 +48,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         // All organization APIs require authentication
                         .requestMatchers("/api/**").authenticated()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(userContextFilter(), JwtAuthFilter.class);

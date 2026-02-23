@@ -18,7 +18,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 import java.util.Optional;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @Slf4j
+@Tag(name = "Authentication", description = "Endpoints for user authentication, SSO sessions, and token generation")
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
@@ -31,6 +35,7 @@ public class AuthController {
     /**
      * Login endpoint - creates SSO session if successful.
      */
+    @Operation(summary = "Login", description = "Authenticates a user and creates an SSO session if successful")
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
@@ -56,6 +61,7 @@ public class AuthController {
      * Logout endpoint - destroys refresh token.
      * For product-specific logout, only the token is revoked.
      */
+    @Operation(summary = "Logout", description = "Revokes a product-specific refresh token")
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -75,6 +81,7 @@ public class AuthController {
     /**
      * Global logout - destroys SSO session (affects all products).
      */
+    @Operation(summary = "Global Logout", description = "Destroys the user's global SSO session, affecting all products")
     @PostMapping("/logout/global")
     public ResponseEntity<Map<String, String>> globalLogout(
             HttpServletRequest httpRequest,
@@ -88,6 +95,7 @@ public class AuthController {
     /**
      * Refresh token endpoint.
      */
+    @Operation(summary = "Refresh Token", description = "Refreshes an access token using a valid refresh token")
     @PostMapping("/refresh")
     public ResponseEntity<?> refresh(@RequestBody RefreshRequest request) {
         try {
@@ -112,6 +120,7 @@ public class AuthController {
     /**
      * Check if user has an active SSO session.
      */
+    @Operation(summary = "Check Session", description = "Checks if the user currently has an active SSO session")
     @GetMapping("/session")
     public ResponseEntity<?> checkSession(HttpServletRequest httpRequest) {
         Optional<CasSession> sessionOpt = sessionService.validateSession(httpRequest);
@@ -131,6 +140,7 @@ public class AuthController {
      * Get product-specific tokens when SSO session exists.
      * This enables cross-product SSO: login once, get tokens for any product.
      */
+    @Operation(summary = "Get Token for Product", description = "Exchanges an active SSO session for product-specific tokens")
     @PostMapping("/token-for-product")
     public ResponseEntity<?> tokenForProduct(
             @RequestBody TokenForProductRequest request,

@@ -30,6 +30,7 @@ public class ProductAdminController {
     }
 
     @PostMapping
+    @com.cas.common.dto.ApiMessage("Product created successfully")
     public ResponseEntity<ProductDto> createProduct(@RequestBody ProductDto.CreateProductRequest request) {
         return ResponseEntity.ok(adminService.createProduct(request));
     }
@@ -55,6 +56,7 @@ public class ProductAdminController {
     }
 
     @PostMapping("/{code}/permissions")
+    @com.cas.common.dto.ApiMessage("Permission created successfully")
     public ResponseEntity<PermissionDto> createPermission(
             @PathVariable String code,
             @RequestBody PermissionDto.CreatePermissionRequest request) {

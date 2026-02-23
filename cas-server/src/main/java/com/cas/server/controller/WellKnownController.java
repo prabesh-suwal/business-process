@@ -13,6 +13,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/.well-known")
 @RequiredArgsConstructor
+@com.cas.common.dto.RawResponse
 public class WellKnownController {
 
     private final TokenService tokenService;

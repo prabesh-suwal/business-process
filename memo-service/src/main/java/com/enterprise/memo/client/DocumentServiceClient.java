@@ -36,6 +36,15 @@ public class DocumentServiceClient {
     @Value("${services.document-service.url:http://localhost:9005}")
     private String documentServiceUrl;
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> unwrapEnvelope(Map<String, Object> response) {
+        if (response != null && response.containsKey("success") && response.containsKey("data")
+                && response.get("data") instanceof Map) {
+            return (Map<String, Object>) response.get("data");
+        }
+        return response;
+    }
+
     /**
      * Upload a file to document-service.
      * Returns the document metadata including id, downloadUrl, etc.
@@ -62,7 +71,7 @@ public class DocumentServiceClient {
 
         // Note: X-User-Id and X-User-Name headers are automatically propagated
         // by UserContextWebClientFilter — do NOT set them manually here
-        return webClientBuilder.build()
+        Map<String, Object> response = webClientBuilder.build()
                 .post()
                 .uri(documentServiceUrl + "/api/documents")
                 .contentType(MediaType.MULTIPART_FORM_DATA)
@@ -70,6 +79,7 @@ public class DocumentServiceClient {
                 .retrieve()
                 .bodyToMono(Map.class)
                 .block();
+        return unwrapEnvelope(response);
     }
 
     /**
@@ -118,12 +128,13 @@ public class DocumentServiceClient {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getDocument(UUID documentId) {
-        return webClientBuilder.build()
+        Map<String, Object> response = webClientBuilder.build()
                 .get()
                 .uri(documentServiceUrl + "/api/documents/" + documentId)
                 .retrieve()
                 .bodyToMono(Map.class)
                 .block();
+        return unwrapEnvelope(response);
     }
 
     /**

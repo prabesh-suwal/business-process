@@ -24,6 +24,15 @@ public class CasClient {
     @Value("${cas.service.url:http://localhost:9000}")
     private String casServiceUrl;
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> unwrapEnvelope(Map<String, Object> response) {
+        if (response != null && response.containsKey("success") && response.containsKey("data")
+                && response.get("data") instanceof Map) {
+            return (Map<String, Object>) response.get("data");
+        }
+        return response;
+    }
+
     /**
      * Find users by role.
      */
@@ -78,12 +87,13 @@ public class CasClient {
      */
     public Map<String, Object> getUser(String userId) {
         try {
-            return webClientBuilder.build()
+            Map<String, Object> response = webClientBuilder.build()
                     .get()
                     .uri(casServiceUrl + "/admin/users/" + userId)
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block();
+            return unwrapEnvelope(response);
         } catch (Exception e) {
             log.warn("Failed to get user {}: {}", userId, e.getMessage());
             return Map.of();

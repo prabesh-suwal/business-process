@@ -35,10 +35,11 @@ async function refreshAccessToken() {
         throw new Error('Refresh failed');
     }
 
-    const data = response.data;
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
-    return data.access_token;
+    // Handle ApiResponse envelope: response.data is { success, data, message }
+    const payload = response.data?.data ?? response.data;
+    localStorage.setItem('access_token', payload.access_token);
+    localStorage.setItem('refresh_token', payload.refresh_token);
+    return payload.access_token;
 }
 
 // Clear all auth tokens
@@ -61,9 +62,27 @@ api.interceptors.request.use(
     error => Promise.reject(error)
 );
 
-// Interceptor to handle 401s with token refresh
+// Response interceptor:
+// 1. Auto-unwrap ApiResponse envelope → res.data becomes the actual payload
+// 2. Handle 401s with token refresh
 api.interceptors.response.use(
-    response => response,
+    response => {
+        // Auto-unwrap ApiResponse { success, data, message, timestamp }
+        if (
+            response.data &&
+            typeof response.data === 'object' &&
+            !Array.isArray(response.data) &&
+            'success' in response.data
+        ) {
+            // It's an ApiResponse envelope — unwrap .data for callers
+            const envelope = response.data;
+            // Attach the envelope on a separate key for callers that need the message
+            response._apiResponse = envelope;
+            // Unwrap: res.data now points directly at the payload
+            response.data = envelope.data !== undefined ? envelope.data : envelope;
+        }
+        return response;
+    },
     async error => {
         const originalRequest = error.config;
 
@@ -219,7 +238,9 @@ export const MemoApi = {
             const response = await fetch(`${GATEWAY_URL}/auth/session`, {
                 credentials: 'include'
             });
-            const data = await response.json();
+            const raw = await response.json();
+            // Handle ApiResponse envelope
+            const data = raw?.success !== undefined ? (raw.data ?? raw) : raw;
             return data.active ? data : null;
         } catch (error) {
             console.warn('SSO check failed:', error);
@@ -242,7 +263,9 @@ export const MemoApi = {
             throw new Error('Failed to get token for product');
         }
 
-        const data = await response.json();
+        const raw = await response.json();
+        // Handle ApiResponse envelope
+        const data = raw?.success !== undefined ? (raw.data ?? raw) : raw;
 
         // Store tokens
         if (data.tokens) {
@@ -268,15 +291,17 @@ export const MemoApi = {
             password,
             productCode: 'MMS'
         }).then(res => {
-            if (res.data.tokens) {
-                if (res.data.tokens.access_token) {
-                    localStorage.setItem('access_token', res.data.tokens.access_token);
+            // res.data is already unwrapped by interceptor (LoginResponse)
+            const data = res.data;
+            if (data.tokens) {
+                if (data.tokens.access_token) {
+                    localStorage.setItem('access_token', data.tokens.access_token);
                 }
-                if (res.data.tokens.refresh_token) {
-                    localStorage.setItem('refresh_token', res.data.tokens.refresh_token);
+                if (data.tokens.refresh_token) {
+                    localStorage.setItem('refresh_token', data.tokens.refresh_token);
                 }
             }
-            return res.data;
+            return data;
         });
     },
 

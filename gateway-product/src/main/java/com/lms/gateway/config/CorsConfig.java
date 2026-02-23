@@ -18,7 +18,8 @@ public class CorsConfig {
         // Allow all origins for now (development)
         corsConfig
                 .setAllowedOriginPatterns(java.util.Arrays.asList("*", "http://localhost:5173", "http://localhost:5176",
-                        "http://localhost:3000", "http://localhost:3001", "http://localhost:3002"));
+                        "http://localhost:3000", "http://localhost:3001", "http://localhost:3002",
+                        "http://localhost:8090"));
 
         // Allow all methods
         corsConfig.setAllowedMethods(java.util.Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));

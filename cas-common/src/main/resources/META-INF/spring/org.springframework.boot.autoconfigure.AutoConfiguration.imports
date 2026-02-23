@@ -3,3 +3,4 @@ com.cas.common.audit.AuditCoreAutoConfiguration
 com.cas.common.audit.AuditServletAutoConfiguration
 com.cas.common.audit.AuditReactiveAutoConfiguration
 com.cas.common.webclient.WebClientAutoConfiguration
+com.cas.common.dto.ApiResponseAutoConfiguration

@@ -21,6 +21,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+@Tag(name = "Memos", description = "Endpoints for managing memos and their workflows")
 @RestController
 @RequestMapping("/api/memos")
 @RequiredArgsConstructor
@@ -30,7 +34,9 @@ public class MemoController {
     private final MemoAccessService memoAccessService;
     private final com.enterprise.memo.client.WorkflowClient workflowClient;
 
+    @Operation(summary = "Create Memo Draft", description = "Creates a new memo draft for the authenticated user")
     @PostMapping("/draft")
+    @com.cas.common.dto.ApiMessage("Memo draft created successfully")
     public ResponseEntity<MemoDTO> createDraft(@Valid @RequestBody CreateMemoRequest request) {
         UserContext user = UserContextHolder.require();
         UUID userUuid = UUID.fromString(user.getUserId());
@@ -38,26 +44,34 @@ public class MemoController {
                 .body(memoService.createDraft(request, userUuid));
     }
 
+    @Operation(summary = "Get Memo", description = "Retrieves a specific memo by ID")
     @GetMapping("/{id}")
+    @com.cas.common.dto.ApiMessage("Memo retrieved successfully")
     public ResponseEntity<MemoDTO> getMemo(@PathVariable UUID id) {
         return ResponseEntity.ok(memoService.getMemo(id));
     }
 
+    @Operation(summary = "Update Memo", description = "Updates an existing memo")
     @PutMapping("/{id}")
+    @com.cas.common.dto.ApiMessage("Memo updated successfully")
     public ResponseEntity<MemoDTO> updateMemo(
             @PathVariable UUID id,
             @RequestBody UpdateMemoRequest request) {
         return ResponseEntity.ok(memoService.updateMemo(id, request));
     }
 
+    @Operation(summary = "Get My Memos", description = "Retrieves a list of memos owned by the authenticated user")
     @GetMapping("/my-memos")
+    @com.cas.common.dto.ApiMessage("My memos retrieved successfully")
     public ResponseEntity<List<MemoDTO>> getMyMemos() {
         UserContext user = UserContextHolder.require();
         UUID userUuid = UUID.fromString(user.getUserId());
         return ResponseEntity.ok(memoService.getMyMemos(userUuid));
     }
 
+    @Operation(summary = "Submit Memo", description = "Submits a memo for workflow approval")
     @PostMapping("/{id}/submit")
+    @com.cas.common.dto.ApiMessage("Memo submitted for approval")
     public ResponseEntity<MemoDTO> submitMemo(@PathVariable UUID id) {
         UserContext user = UserContextHolder.require();
         UUID userUuid = UUID.fromString(user.getUserId());
@@ -65,6 +79,7 @@ public class MemoController {
     }
 
     // Callback endpoint for Workflow Engine
+    @Operation(summary = "Update Memo Status", description = "Callback endpoint for Workflow Engine to update status")
     @PutMapping("/{id}/status")
     public ResponseEntity<Void> updateStatus(
             @PathVariable UUID id,
@@ -77,6 +92,7 @@ public class MemoController {
      * Get all memos the user can access (created, involved in workflow, or viewer).
      * This is the main endpoint for the Memos page.
      */
+    @Operation(summary = "Get Accessible Memos", description = "Retrieves all memos the user has access to (creator, involved, or viewer)")
     @GetMapping("/accessible")
     public ResponseEntity<List<Map<String, Object>>> getAccessibleMemos() {
         UserContext user = UserContextHolder.require();
@@ -114,6 +130,7 @@ public class MemoController {
     /**
      * Get memos that user can view (including view-only access).
      */
+    @Operation(summary = "Get Viewable Memos", description = "Retrieves memos that user can view (including view-only access)")
     @GetMapping("/viewable")
     public ResponseEntity<List<MemoDTO>> getViewableMemos() {
         UserContext user = UserContextHolder.require();
@@ -127,6 +144,7 @@ public class MemoController {
     /**
      * Check if user can view a specific memo.
      */
+    @Operation(summary = "Check Memo Visibility", description = "Checks if user has permission to view a specific memo")
     @GetMapping("/{id}/can-view")
     public ResponseEntity<Boolean> canViewMemo(@PathVariable UUID id) {
         UserContext user = UserContextHolder.require();
@@ -142,6 +160,7 @@ public class MemoController {
      * Get execution history (timeline) for a memo's workflow.
      * Proxies to workflow-service via WorkflowClient.
      */
+    @Operation(summary = "Get Memo History", description = "Retrieves execution history (timeline) for a memo's workflow")
     @GetMapping("/{id}/history")
     public ResponseEntity<List<Map<String, Object>>> getHistory(@PathVariable UUID id) {
         MemoDTO memo = memoService.getMemo(id);

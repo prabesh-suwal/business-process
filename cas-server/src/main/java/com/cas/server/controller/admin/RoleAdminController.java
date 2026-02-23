@@ -24,6 +24,7 @@ public class RoleAdminController {
     }
 
     @PostMapping
+    @com.cas.common.dto.ApiMessage("Role created successfully")
     public ResponseEntity<RoleDto> createRole(@RequestBody RoleDto.CreateRoleRequest request) {
         return ResponseEntity.ok(adminService.createRole(request));
     }
@@ -42,6 +43,7 @@ public class RoleAdminController {
     }
 
     @PutMapping("/{id}/permissions")
+    @com.cas.common.dto.ApiMessage("Permissions updated successfully")
     public ResponseEntity<RoleDto> setPermissions(
             @PathVariable UUID id,
             @RequestBody RoleDto.SetPermissionsRequest request) {

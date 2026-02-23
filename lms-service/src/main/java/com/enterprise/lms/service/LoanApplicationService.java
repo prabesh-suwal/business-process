@@ -214,6 +214,17 @@ public class LoanApplicationService {
                     .bodyToMono(Map.class)
                     .block();
 
+            if (response != null && response.containsKey("data") && response.get("data") instanceof Map) {
+                Map data = (Map) response.get("data");
+                if (data.get("processInstanceId") != null) {
+                    return data.get("processInstanceId").toString();
+                }
+                // Fallback to flowableProcessInstanceId
+                if (data.get("flowableProcessInstanceId") != null) {
+                    return data.get("flowableProcessInstanceId").toString();
+                }
+            }
+            // Fallback for non-wrapped response
             if (response != null && response.get("processInstanceId") != null) {
                 return response.get("processInstanceId").toString();
             }

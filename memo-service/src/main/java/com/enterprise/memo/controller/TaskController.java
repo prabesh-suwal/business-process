@@ -38,6 +38,7 @@ public class TaskController {
      * (subject, reference number, topic name).
      */
     @GetMapping("/inbox")
+    @com.cas.common.dto.RawResponse
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseEntity<java.util.Map<String, Object>> getInbox(
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
@@ -60,19 +61,25 @@ public class TaskController {
     }
 
     /**
-     * Enrich the content items inside the ApiResponse envelope with memo details.
+     * Enrich the content items with memo details (subject, memoNumber, topicName).
+     * Works with both unwrapped paged result {content: [...]} and wrapped
+     * envelope {data: {content: [...]}}.
      */
     @SuppressWarnings("unchecked")
     private void enrichInboxContent(java.util.Map<String, Object> response) {
         if (response == null)
             return;
 
-        java.util.Map<String, Object> data = (java.util.Map<String, Object>) response.get("data");
-        if (data == null)
-            return;
-
-        java.util.List<java.util.Map<String, Object>> tasks = (java.util.List<java.util.Map<String, Object>>) data
-                .get("content");
+        // After unwrapEnvelope(), response IS the paged result directly
+        // (e.g. {content:[...], totalElements:N, ...}).
+        // Fallback to response.get("data") for backward compat with wrapped shape.
+        java.util.List<java.util.Map<String, Object>> tasks = null;
+        if (response.containsKey("content")) {
+            tasks = (java.util.List<java.util.Map<String, Object>>) response.get("content");
+        } else if (response.get("data") instanceof java.util.Map) {
+            java.util.Map<String, Object> data = (java.util.Map<String, Object>) response.get("data");
+            tasks = (java.util.List<java.util.Map<String, Object>>) data.get("content");
+        }
         if (tasks == null || tasks.isEmpty())
             return;
 

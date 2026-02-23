@@ -1,0 +1,25 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: swagger-docs-service
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    urlsPrimaryName: Admin API
+    urls:
+      - name: Admin API
+        url: http://localhost:8085/v3/api-docs/merged
+      - name: WFM API
+        url: http://localhost:8087/v3/api-docs/merged
+      - name: LMS API
+        url: http://localhost:8086/v3/api-docs/merged # Placeholder port, update if different
+    disable-swagger-default-url: true
+    path: /swagger-ui.html
+
+logging:
+  level:
+    org.springdoc: DEBUG

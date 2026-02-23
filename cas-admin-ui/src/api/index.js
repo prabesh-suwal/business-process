@@ -42,7 +42,9 @@ async function refreshAccessToken() {
         throw new Error('Refresh failed');
     }
 
-    const data = await response.json();
+    const raw = await response.json();
+    // Handle ApiResponse envelope
+    const data = raw?.success !== undefined && raw?.data ? raw.data : raw;
     setToken(data.access_token);
     localStorage.setItem('refreshToken', data.refresh_token);
     return data.access_token;
@@ -99,7 +101,12 @@ async function request(endpoint, options = {}, isRetry = false) {
     }
 
     if (response.status === 204) return null;
-    return response.json();
+    const raw = await response.json();
+    // Auto-unwrap ApiResponse { success, data, message, timestamp }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'success' in raw) {
+        return raw.data !== undefined ? raw.data : raw;
+    }
+    return raw;
 }
 
 // Auth
@@ -124,7 +131,9 @@ export const auth = {
             const response = await fetch(`${GATEWAY_URL}/auth/session`, {
                 credentials: 'include'
             });
-            const data = await response.json();
+            const raw = await response.json();
+            // Handle ApiResponse envelope
+            const data = raw?.success !== undefined && raw?.data ? raw.data : raw;
             return data.active ? data : null;
         } catch (error) {
             console.warn('SSO check failed:', error);
@@ -147,7 +156,9 @@ export const auth = {
             throw new Error('Failed to get token for product');
         }
 
-        const data = await response.json();
+        const raw = await response.json();
+        // Handle ApiResponse envelope
+        const data = raw?.success !== undefined && raw?.data ? raw.data : raw;
 
         // Store tokens (CAS returns snake_case: access_token, refresh_token)
         if (data.tokens) {

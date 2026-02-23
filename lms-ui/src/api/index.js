@@ -53,7 +53,12 @@ async function request(endpoint, options = {}) {
     }
 
     if (response.status === 204) return null;
-    return response.json();
+    const raw = await response.json();
+    // Auto-unwrap ApiResponse { success, data, message, timestamp }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'success' in raw) {
+        return raw.data !== undefined ? raw.data : raw;
+    }
+    return raw;
 }
 
 // LMS-specific APIs
@@ -153,7 +158,9 @@ export const auth = {
             throw new Error(error.message || 'Login failed');
         }
 
-        const data = await response.json();
+        const raw = await response.json();
+        // Handle ApiResponse envelope
+        const data = raw?.success !== undefined && raw?.data ? raw.data : raw;
 
         // Store tokens from response (CAS returns snake_case)
         if (data.tokens) {
@@ -194,7 +201,9 @@ export const auth = {
             const response = await fetch(`${LMS_GATEWAY_URL}/auth/session`, {
                 credentials: 'include' // Include SSO cookie
             });
-            const data = await response.json();
+            const raw = await response.json();
+            // Handle ApiResponse envelope
+            const data = raw?.success !== undefined && raw?.data ? raw.data : raw;
             return data.active ? data : null;
         } catch (error) {
             console.warn('SSO check failed:', error);
@@ -218,7 +227,9 @@ export const auth = {
             throw new Error('Failed to get token for product');
         }
 
-        const data = await response.json();
+        const raw = await response.json();
+        // Handle ApiResponse envelope
+        const data = raw?.success !== undefined && raw?.data ? raw.data : raw;
 
         // Store tokens (CAS returns snake_case: access_token, refresh_token)
         if (data.tokens) {

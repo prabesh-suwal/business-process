@@ -47,6 +47,7 @@ public class SecurityConfig {
                         .requestMatchers("/evaluate/**").permitAll()
                         // Policy management - requires authentication
                         .requestMatchers("/policies/**").authenticated()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(userContextFilter(), JwtAuthenticationFilter.class);

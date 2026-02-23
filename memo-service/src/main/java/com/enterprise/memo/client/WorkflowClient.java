@@ -28,6 +28,33 @@ public class WorkflowClient {
         private String workflowServiceUrl;
 
         /**
+         * Unwrap ApiResponse envelope if present.
+         * Backend responses may be wrapped as: {success, message, data: <payload>,
+         * timestamp}
+         * This extracts the inner 'data' field when the envelope is detected.
+         */
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> unwrapEnvelope(Map<String, Object> response) {
+                if (response != null && response.containsKey("success") && response.containsKey("data")
+                                && response.get("data") instanceof Map) {
+                        return (Map<String, Object>) response.get("data");
+                }
+                return response;
+        }
+
+        /**
+         * Unwrap ApiResponse envelope when data is a List.
+         */
+        @SuppressWarnings("unchecked")
+        private <T> java.util.List<T> unwrapEnvelopeAsList(Map<String, Object> response) {
+                if (response != null && response.containsKey("success") && response.containsKey("data")
+                                && response.get("data") instanceof java.util.List) {
+                        return (java.util.List<T>) response.get("data");
+                }
+                return java.util.Collections.emptyList();
+        }
+
+        /**
          * Start a workflow process. Returns the Flowable process instance ID.
          */
         @SuppressWarnings("unchecked")
@@ -44,8 +71,9 @@ public class WorkflowClient {
                                 .bodyToMono(Map.class)
                                 .block();
 
-                if (response != null && response.get("flowableProcessInstanceId") != null) {
-                        String processInstanceId = response.get("flowableProcessInstanceId").toString();
+                Map<String, Object> data = unwrapEnvelope(response);
+                if (data != null && data.get("flowableProcessInstanceId") != null) {
+                        String processInstanceId = data.get("flowableProcessInstanceId").toString();
                         log.info("Process started, flowableProcessInstanceId: {}", processInstanceId);
                         return processInstanceId;
                 }
@@ -60,12 +88,21 @@ public class WorkflowClient {
         public java.util.List<Map<String, Object>> getTimeline(String processInstanceId) {
                 log.debug("Getting timeline for processInstanceId: {}", processInstanceId);
                 try {
-                        return webClientBuilder.build()
+                        Map<String, Object> response = webClientBuilder.build()
                                         .get()
                                         .uri(workflowServiceUrl + "/api/history/timeline/" + processInstanceId)
                                         .retrieve()
-                                        .bodyToMono(java.util.List.class)
+                                        .bodyToMono(Map.class)
                                         .block();
+
+                        // Unwrap ApiResponse envelope: {success, data: [...], message, timestamp}
+                        java.util.List<Map<String, Object>> result = unwrapEnvelopeAsList(response);
+                        if (!result.isEmpty()) {
+                                return result;
+                        }
+                        // Fallback: if response is not wrapped, return empty
+                        log.warn("Timeline response for {} had unexpected shape: {}", processInstanceId, response);
+                        return java.util.Collections.emptyList();
                 } catch (Exception e) {
                         log.error("Failed to get timeline for {}: {}", processInstanceId, e.getMessage());
                         return java.util.Collections.emptyList();
@@ -151,12 +188,13 @@ public class WorkflowClient {
          * Get task details from workflow service.
          */
         public Map<String, Object> getTask(String taskId) {
-                return webClientBuilder.build()
+                Map<String, Object> response = webClientBuilder.build()
                                 .get()
                                 .uri(workflowServiceUrl + "/api/tasks/" + taskId)
                                 .retrieve()
                                 .bodyToMono(Map.class)
                                 .block();
+                return unwrapEnvelope(response);
         }
 
         /**
@@ -201,14 +239,24 @@ public class WorkflowClient {
                                 .bodyToMono(Map.class)
                                 .block();
 
-                if (response != null && response.get("processDefinitionId") != null) {
+                log.info("Deploy BPMN response: {}", response);
+
+                // Response is wrapped in envelope: {success, message, data:
+                // {processDefinitionId, ...}, timestamp}
+                Map<String, Object> data = response;
+                if (response != null && response.containsKey("data") && response.get("data") instanceof Map) {
+                        data = (Map<String, Object>) response.get("data");
+                }
+
+                if (data != null && data.get("processDefinitionId") != null) {
                         return new BpmnDeployResult(
-                                        response.get("processDefinitionId").toString(),
-                                        response.get("processTemplateId") != null
-                                                        ? response.get("processTemplateId").toString()
+                                        data.get("processDefinitionId").toString(),
+                                        data.get("processTemplateId") != null
+                                                        ? data.get("processTemplateId").toString()
                                                         : null);
                 }
-                throw new RuntimeException("Failed to deploy BPMN - no process definition ID returned");
+                throw new RuntimeException(
+                                "Failed to deploy BPMN - no process definition ID returned. Response: " + response);
         }
 
         /**
@@ -228,7 +276,7 @@ public class WorkflowClient {
                         String priority, String search) {
                 log.debug("Getting task inbox via auto-propagated UserContext headers (page={}, size={})", page, size);
 
-                return webClientBuilder.build()
+                Map<String, Object> response = webClientBuilder.build()
                                 .get()
                                 .uri(workflowServiceUrl + "/api/tasks/inbox", uriBuilder -> uriBuilder
                                                 .queryParam("page", page)
@@ -247,33 +295,31 @@ public class WorkflowClient {
                                                 new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {
                                                 })
                                 .block();
+                return unwrapEnvelope(response);
         }
 
         /**
          * Get task inbox (no pagination — backward compatible).
          */
+        @SuppressWarnings("unchecked")
         public java.util.List<Map<String, Object>> getTaskInboxAll() {
                 log.debug("Getting full task inbox via auto-propagated UserContext headers");
 
-                return webClientBuilder.build()
+                Map<String, Object> response = webClientBuilder.build()
                                 .get()
                                 .uri(workflowServiceUrl + "/api/tasks/inbox?size=1000")
                                 .retrieve()
                                 .bodyToMono(
                                                 new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {
                                                 })
-                                .map(response -> {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> data = (Map<String, Object>) response.get("data");
-                                        if (data != null && data.get("content") != null) {
-                                                @SuppressWarnings("unchecked")
-                                                java.util.List<Map<String, Object>> content = (java.util.List<Map<String, Object>>) data
-                                                                .get("content");
-                                                return content;
-                                        }
-                                        return java.util.Collections.<Map<String, Object>>emptyList();
-                                })
                                 .block();
+
+                // Unwrap ApiResponse envelope, then extract paginated content
+                Map<String, Object> data = unwrapEnvelope(response);
+                if (data != null && data.get("content") != null) {
+                        return (java.util.List<Map<String, Object>>) data.get("content");
+                }
+                return java.util.Collections.emptyList();
         }
 
         /**
@@ -285,13 +331,14 @@ public class WorkflowClient {
         public java.util.List<Map<String, Object>> getTaskConfigsForTemplate(String processTemplateId) {
                 log.debug("Getting task configs for process template: {}", processTemplateId);
                 try {
-                        return webClientBuilder.build()
+                        Map<String, Object> response = webClientBuilder.build()
                                         .get()
                                         .uri(workflowServiceUrl + "/api/process-templates/" + processTemplateId
                                                         + "/task-configs")
                                         .retrieve()
-                                        .bodyToMono(java.util.List.class)
+                                        .bodyToMono(Map.class)
                                         .block();
+                        return unwrapEnvelopeAsList(response);
                 } catch (Exception e) {
                         log.debug("No task configs for template {}: {}", processTemplateId, e.getMessage());
                         return java.util.Collections.emptyList();
@@ -307,12 +354,13 @@ public class WorkflowClient {
                 log.debug("Getting outcome config for task: {}", taskId);
 
                 try {
-                        return webClientBuilder.build()
+                        Map<String, Object> response = webClientBuilder.build()
                                         .get()
                                         .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/outcome-config")
                                         .retrieve()
                                         .bodyToMono(Map.class)
                                         .block();
+                        return unwrapEnvelope(response);
                 } catch (Exception e) {
                         log.debug("No outcome config for task {}: {}", taskId, e.getMessage());
                         return null;
@@ -329,12 +377,13 @@ public class WorkflowClient {
                 log.debug("Getting movement history for task: {}", taskId);
 
                 try {
-                        return webClientBuilder.build()
+                        Map<String, Object> response = webClientBuilder.build()
                                         .get()
                                         .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/movement-history")
                                         .retrieve()
                                         .bodyToMono(Map.class)
                                         .block();
+                        return unwrapEnvelope(response);
                 } catch (Exception e) {
                         log.debug("No movement history for task {}: {}", taskId, e.getMessage());
                         return null;
@@ -349,12 +398,13 @@ public class WorkflowClient {
         public java.util.List<Map<String, Object>> getReturnPoints(String taskId) {
                 log.debug("Getting return points for task: {}", taskId);
                 try {
-                        return webClientBuilder.build()
+                        Map<String, Object> response = webClientBuilder.build()
                                         .get()
                                         .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/return-points")
                                         .retrieve()
-                                        .bodyToMono(java.util.List.class)
+                                        .bodyToMono(Map.class)
                                         .block();
+                        return unwrapEnvelopeAsList(response);
                 } catch (Exception e) {
                         log.debug("No return points for task {}: {}", taskId, e.getMessage());
                         return java.util.Collections.emptyList();
@@ -387,12 +437,13 @@ public class WorkflowClient {
         public Map<String, Object> getDelegateCandidates(String taskId) {
                 log.debug("Getting delegate candidates for task: {}", taskId);
                 try {
-                        return webClientBuilder.build()
+                        Map<String, Object> response = webClientBuilder.build()
                                         .get()
                                         .uri(workflowServiceUrl + "/api/tasks/" + taskId + "/delegate-candidates")
                                         .retrieve()
                                         .bodyToMono(Map.class)
                                         .block();
+                        return unwrapEnvelope(response);
                 } catch (Exception e) {
                         log.debug("No delegate candidates for task {}: {}", taskId, e.getMessage());
                         return Map.of("candidateGroups", java.util.Collections.emptyList(),
