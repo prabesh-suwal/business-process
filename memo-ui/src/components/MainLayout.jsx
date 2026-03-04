@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import Guard from './Guard';
 import { Button } from './ui/button';
 import { Toaster } from 'sonner';
 import {
@@ -100,17 +101,17 @@ export default function MainLayout() {
                 {/* Navigation */}
                 <div className="flex-1 py-6 space-y-1 overflow-y-auto">
                     <div className="px-5 pb-3 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Main Menu</div>
-                    <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" />
-                    <SidebarItem to="/tasks" icon={Inbox} label="Task Inbox" notifications={3} />
-                    <SidebarItem to="/memos" icon={FileText} label="Memos" />
-                    <SidebarItem to="/drafts" icon={FolderOpen} label="My Drafts" />
-                    <SidebarItem to="/archives" icon={Archive} label="Archives" />
+                    <Guard access="MMS.MEMO.VIEW"><SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" /></Guard>
+                    <Guard access="MMS.TASK.VIEW"><SidebarItem to="/tasks" icon={Inbox} label="Task Inbox" notifications={3} /></Guard>
+                    <Guard access="MMS.MEMO.VIEW"><SidebarItem to="/memos" icon={FileText} label="Memos" /></Guard>
+                    <Guard access="MMS.MEMO.CREATE"><SidebarItem to="/drafts" icon={FolderOpen} label="My Drafts" /></Guard>
+                    <Guard access="MMS.MEMO.VIEW"><SidebarItem to="/archives" icon={Archive} label="Archives" /></Guard>
 
                     <div className="my-4 mx-5 border-t border-white/5"></div>
 
                     <div className="px-5 pb-3 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Analytics</div>
-                    <SidebarItem to="/reports" icon={BarChart3} label="Reports" badge="New" />
-                    <SidebarItem to="/dmn" icon={Table2} label="Decision Tables" />
+                    <Guard module="MMS.REPORT"><SidebarItem to="/reports" icon={BarChart3} label="Reports" badge="New" /></Guard>
+                    <Guard module="MMS.DMN"><SidebarItem to="/dmn" icon={Table2} label="Decision Tables" /></Guard>
                 </div>
 
                 {/* User Profile (Bottom) */}
@@ -178,12 +179,14 @@ export default function MainLayout() {
 
                         <div className="h-8 w-px bg-slate-200 mx-2"></div>
 
-                        <Link to="/create">
-                            <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium shadow-lg shadow-blue-500/25 rounded-xl px-4 h-10">
-                                <PlusCircle className="mr-2 h-4 w-4" />
-                                New Memo
-                            </Button>
-                        </Link>
+                        <Guard access="MMS.MEMO.CREATE">
+                            <Link to="/create">
+                                <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium shadow-lg shadow-blue-500/25 rounded-xl px-4 h-10">
+                                    <PlusCircle className="mr-2 h-4 w-4" />
+                                    New Memo
+                                </Button>
+                            </Link>
+                        </Guard>
                     </div>
                 </header>
 

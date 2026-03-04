@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MemoApi, TaskApi } from '../lib/api';
+import Guard from '../components/Guard';
 import RichTextEditor from '../components/RichTextEditor';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
@@ -492,69 +493,73 @@ export default function MemoEditor() {
                                         {saving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
                                         Save Draft
                                     </Button>
-                                    <Button size="sm" onClick={handleSubmit} disabled={submitting} className="bg-brand-blue hover:bg-brand-blue-hover text-white">
-                                        {submitting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
-                                        Submit
-                                    </Button>
+                                    <Guard access="MMS.MEMO.SUBMIT">
+                                        <Button size="sm" onClick={handleSubmit} disabled={submitting} className="bg-brand-blue hover:bg-brand-blue-hover text-white">
+                                            {submitting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
+                                            Submit
+                                        </Button>
+                                    </Guard>
                                 </>
                             )}
 
                             {/* Approver Actions - Dropdown */}
                             {!isEditable && (
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button className="bg-brand-blue hover:bg-brand-blue-hover text-white">
-                                            Actions <ChevronDown className="ml-2 h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-56">
-                                        {activeTask && (
-                                            <>
-                                                {outcomeConfig?.options?.length > 0 ? (
-                                                    /* Dynamic outcome buttons from config (enterprise sets pattern) */
-                                                    outcomeConfig.options.map((option, idx) => {
-                                                        const Icon = getOutcomeIcon(option.style);
-                                                        return (
-                                                            <DropdownMenuItem
-                                                                key={idx}
-                                                                onClick={() => openActionDialog(option.label, option)}
-                                                                className={`${getOutcomeStyle(option.style)} cursor-pointer`}
-                                                            >
-                                                                <Icon className="mr-2 h-4 w-4" />
-                                                                <span>{option.label}</span>
+                                <Guard accessAny={["MMS.TASK.APPROVE", "MMS.TASK.REJECT"]}>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button className="bg-brand-blue hover:bg-brand-blue-hover text-white">
+                                                Actions <ChevronDown className="ml-2 h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-56">
+                                            {activeTask && (
+                                                <>
+                                                    {outcomeConfig?.options?.length > 0 ? (
+                                                        /* Dynamic outcome buttons from config (enterprise sets pattern) */
+                                                        outcomeConfig.options.map((option, idx) => {
+                                                            const Icon = getOutcomeIcon(option.style);
+                                                            return (
+                                                                <DropdownMenuItem
+                                                                    key={idx}
+                                                                    onClick={() => openActionDialog(option.label, option)}
+                                                                    className={`${getOutcomeStyle(option.style)} cursor-pointer`}
+                                                                >
+                                                                    <Icon className="mr-2 h-4 w-4" />
+                                                                    <span>{option.label}</span>
+                                                                </DropdownMenuItem>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        /* Default hardcoded buttons */
+                                                        <>
+                                                            <DropdownMenuItem onClick={() => openActionDialog('approve')} className="text-green-600 focus:text-green-700 focus:bg-green-50 cursor-pointer">
+                                                                <CheckCircle className="mr-2 h-4 w-4" />
+                                                                <span>Approve Memo</span>
                                                             </DropdownMenuItem>
-                                                        );
-                                                    })
-                                                ) : (
-                                                    /* Default hardcoded buttons */
-                                                    <>
-                                                        <DropdownMenuItem onClick={() => openActionDialog('approve')} className="text-green-600 focus:text-green-700 focus:bg-green-50 cursor-pointer">
-                                                            <CheckCircle className="mr-2 h-4 w-4" />
-                                                            <span>Approve Memo</span>
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => openActionDialog('sendback')} className="text-orange-600 focus:text-orange-700 focus:bg-orange-50 cursor-pointer">
-                                                            <CornerUpLeft className="mr-2 h-4 w-4" />
-                                                            <span>Request Revision</span>
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => openActionDialog('reject')} className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer">
-                                                            <XCircle className="mr-2 h-4 w-4" />
-                                                            <span>Reject Memo</span>
-                                                        </DropdownMenuItem>
-                                                    </>
-                                                )}
-                                                <DropdownMenuSeparator />
-                                            </>
-                                        )}
-                                        <DropdownMenuItem onClick={handleEmail} className="cursor-pointer">
-                                            <Mail className="mr-2 h-4 w-4 text-slate-500" />
-                                            <span>Email URL</span>
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={handlePrint} className="cursor-pointer">
-                                            <Printer className="mr-2 h-4 w-4 text-slate-500" />
-                                            <span>Print Memo</span>
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                                            <DropdownMenuItem onClick={() => openActionDialog('sendback')} className="text-orange-600 focus:text-orange-700 focus:bg-orange-50 cursor-pointer">
+                                                                <CornerUpLeft className="mr-2 h-4 w-4" />
+                                                                <span>Request Revision</span>
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => openActionDialog('reject')} className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer">
+                                                                <XCircle className="mr-2 h-4 w-4" />
+                                                                <span>Reject Memo</span>
+                                                            </DropdownMenuItem>
+                                                        </>
+                                                    )}
+                                                    <DropdownMenuSeparator />
+                                                </>
+                                            )}
+                                            <DropdownMenuItem onClick={handleEmail} className="cursor-pointer">
+                                                <Mail className="mr-2 h-4 w-4 text-slate-500" />
+                                                <span>Email URL</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={handlePrint} className="cursor-pointer">
+                                                <Printer className="mr-2 h-4 w-4 text-slate-500" />
+                                                <span>Print Memo</span>
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </Guard>
                             )}
                         </div>
                     </CardHeader>

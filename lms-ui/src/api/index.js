@@ -1,7 +1,7 @@
 // LMS API Client - connecting to lms-gateway (ALL calls go through gateway)
 const LMS_GATEWAY_URL = import.meta.env.PROD
     ? 'https://lms-api.example.com'
-    : 'http://localhost:8086';  // LMS Gateway
+    : 'http://localhost:8085';  // API Gateway
 
 let accessToken = localStorage.getItem('accessToken');
 

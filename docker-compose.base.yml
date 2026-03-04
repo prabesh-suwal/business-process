@@ -35,12 +35,13 @@ services:
     volumes:
       - consul_data:/consul/data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8500/v1/status/leader" ]
+      test: [ "CMD", "consul", "members" ]
       interval: 10s
       timeout: 5s
-    retries: 5
-  networks:
-    - app-network
+      retries: 5
+      start_period: 30s
+    networks:
+      - app-network
 
   # minio:
   #   image: minio/minio:latest
@@ -94,6 +95,33 @@ services:
       resources:
         limits:
           memory: 512M
+    networks:
+      - app-network
+
+  api-gateway:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/api-gateway:${TAG:-latest}
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      REDIS_HOST: redis
+      CONSUL_HOST: consul
+      CAS_ISSUER: ${CAS_ISSUER:-http://cas-server:9000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      cas-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
     networks:
       - app-network
 
@@ -294,6 +322,55 @@ services:
       DB_PORT: ${DB_PORT:-5432}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  maker-checker-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/maker-checker-service:${TAG:-latest}
+    container_name: maker-checker-service
+    restart: unless-stopped
+    ports:
+      - "9011:9011"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      CONSUL_HOST: consul
+      INTERNAL_GATEWAY_URL: http://api-gateway:8085
+    depends_on:
+      consul:
+        condition: service_healthy
+      api-gateway:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks:
+      - app-network
+
+  swagger-docs-service:
+    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/swagger-docs-service:${TAG:-latest}
+    container_name: swagger-docs-service
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CONSUL_HOST: consul
+    depends_on:
+      consul:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:

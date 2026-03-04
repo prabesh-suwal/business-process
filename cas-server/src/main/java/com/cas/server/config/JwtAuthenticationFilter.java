@@ -62,6 +62,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 path.startsWith("/oauth/") ||
                 path.startsWith("/.well-known/") ||
                 path.startsWith("/admin/workflow-config/") || // Public dropdown data
+                path.startsWith("/internal/") || // Internal service-to-service (secured by shared token)
                 path.equals("/actuator/health");
     }
 }

@@ -1,0 +1,96 @@
+# ==============================================================================
+# UNIFIED API GATEWAY — Configuration
+# ==============================================================================
+# Combines admin-gateway (port 8085) and gateway-product (port 8086)
+# into a single gateway on port 8085.
+# ==============================================================================
+
+server:
+  port: 8085
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:localhost}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        service-name: ${spring.application.name}
+        health-check-path: /actuator/health
+        health-check-interval: 15s
+
+    gateway:
+      server:
+        webflux:
+          enabled: true
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# Route target URLs
+gateway:
+  product-codes:
+    - LMS
+    - MMS
+    - ADMIN
+    - CAS_ADMIN
+
+  routes:
+    cas-url: http://localhost:9000
+    memo-url: http://localhost:9008
+    lms-url: http://localhost:9005
+    person-url: http://localhost:9007
+    workflow-url: http://localhost:9002
+    form-url: http://localhost:9006
+    org-url: http://localhost:9003
+    document-url: http://localhost:9010
+    policy-url: http://localhost:9001
+    audit-url: http://localhost:9009
+    maker-checker-url: http://localhost:9011
+
+  jwt:
+    jwks-uri: http://localhost:9000/.well-known/jwks.json
+    issuer: http://localhost:9000
+
+  rate-limit:
+    enabled: true
+    default-limit: 100
+    window-seconds: 60
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+
+# Audit
+services:
+  audit-service:
+    url: http://localhost:9009
+    enabled: true
+  workflow-service:
+    url: http://localhost:9002
+  form-service:
+    url: http://localhost:9006
+  cas-server:
+    url: http://localhost:9000
+  document-service:
+    url: http://localhost:9010
+
+# Internal service communication
+internal:
+  service:
+    token: ${INTERNAL_SERVICE_TOKEN:mc-internal-s3cr3t-token-2026}
+
+# Logging
+logging:
+  level:
+    com.cas: DEBUG
+    org.springframework.cloud.gateway: DEBUG

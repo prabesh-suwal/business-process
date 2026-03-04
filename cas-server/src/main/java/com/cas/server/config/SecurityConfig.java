@@ -4,7 +4,6 @@ import com.cas.common.security.UserContextFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -45,6 +44,9 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         // Workflow config endpoints - public dropdown data
                         .requestMatchers("/admin/workflow-config/**").permitAll()
+
+                        // Internal service-to-service endpoints (secured by shared token)
+                        .requestMatchers("/internal/**").permitAll()
 
                         // Admin endpoints require authentication (protected by JWT filter)
                         .requestMatchers("/admin/**").authenticated()

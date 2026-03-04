@@ -32,36 +32,7 @@ services:
     networks:
       - app-network
 
-  gateway-product:
-    image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/gateway-product:${TAG:-latest}
-    container_name: gateway-product
-    restart: unless-stopped
-    ports:
-      - "8086:8086"
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      DB_HOST: ${DB_HOST:-host.docker.internal}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      REDIS_HOST: redis
-      CONSUL_HOST: consul
-      CAS_ISSUER: ${CAS_ISSUER:-http://cas-server:9000}
-    depends_on:
-      redis:
-        condition: service_healthy
-      consul:
-        condition: service_healthy
-      cas-server:
-        condition: service_started
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    deploy:
-      resources:
-        limits:
-          memory: 384M
-    networks:
-      - app-network
+  # api-gateway is now in docker-compose.base.yml
 
   memo-ui:
     image: ${REGISTRY:-ghcr.io/growphasetech/business-process}/memo-ui:${TAG:-latest}

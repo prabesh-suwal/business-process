@@ -1,7 +1,11 @@
 import axios from 'axios';
 
 // API Configuration - Memo Gateway
-const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || (import.meta.env.PROD ? '' : 'http://localhost:8086');
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || (import.meta.env.PROD ? '' : 'http://localhost:8085');
+
+// Base path for login redirects (e.g. '/memo/login' in production)
+const BASE_URL = (import.meta.env.VITE_BASE_URL || '/').replace(/\/$/, '');
+const LOGIN_PATH = `${BASE_URL}/login`;
 
 // Token refresh state
 let isRefreshing = false;
@@ -111,7 +115,7 @@ api.interceptors.response.use(
                 console.warn("Token refresh failed - redirecting to login.");
                 clearTokens();
                 if (!window.location.pathname.includes('/login')) {
-                    window.location.href = '/login';
+                    window.location.href = LOGIN_PATH;
                 }
                 return Promise.reject(refreshError);
             }
@@ -122,7 +126,7 @@ api.interceptors.response.use(
             console.warn("Unauthorized - session might be expired.");
             clearTokens();
             if (!window.location.pathname.includes('/login')) {
-                window.location.href = '/login';
+                window.location.href = LOGIN_PATH;
             }
         }
         return Promise.reject(error);
@@ -228,6 +232,12 @@ export const MemoApi = {
 
     // Auth
     getSession: () => api.get('/auth/session').then(res => res.data),
+
+    /**
+     * Get the effective access context for the authenticated user.
+     * Returns resolved permissions grouped by Product → Module → Actions.
+     */
+    getMe: () => api.get('/auth/api/me').then(res => res.data),
 
     /**
      * Check if there's an active SSO session (e.g., from admin-ui login).

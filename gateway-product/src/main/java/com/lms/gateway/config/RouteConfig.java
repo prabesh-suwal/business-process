@@ -85,6 +85,16 @@ public class RouteConfig {
                                                                 .removeResponseHeader("WWW-Authenticate"))
                                                 .uri(CAS_URL))
 
+                                // Effective access context — JWT-authenticated
+                                .route("auth-me", r -> r.path("/auth/api/me", "/auth/api/me/**")
+                                                .filters(f -> f.filter(jwtAuthentication.apply(
+                                                                (JwtAuthenticationGatewayFilterFactory.Config c) -> {
+                                                                }))
+                                                                .rewritePath("/auth/api/me(?<segment>/?.*)",
+                                                                                "/api/me${segment}")
+                                                                .removeResponseHeader("WWW-Authenticate"))
+                                                .uri(CAS_URL))
+
                                 // --- MMS (Memo) Routes ---
 
                                 .route("memo-service-memos", r -> r.path("/memos/**")

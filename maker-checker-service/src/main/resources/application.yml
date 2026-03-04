@@ -1,0 +1,59 @@
+server:
+  port: 9011
+
+spring:
+  application:
+    name: maker-checker-service
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/maker_checker_db
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 10
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:localhost}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        service-name: ${spring.application.name}
+        health-check-path: /actuator/health
+        health-check-interval: 15s
+
+# Internal gateway URL for executing approved requests
+internal:
+  gateway-url: ${INTERNAL_GATEWAY_URL:http://localhost:8085}
+  service:
+    token: ${INTERNAL_SERVICE_TOKEN:mc-internal-s3cr3t-token-2026}
+
+# Audit service
+services:
+  audit-service:
+    url: ${AUDIT_SERVICE_URL:http://localhost:9009}
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.enterprise.makerchecker: DEBUG

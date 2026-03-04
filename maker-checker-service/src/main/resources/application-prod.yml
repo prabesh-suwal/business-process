@@ -1,0 +1,25 @@
+spring:
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:consul}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        prefer-ip-address: true
+        ip-address: ${HOST_IP:maker-checker-service}
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:host.docker.internal}:${DB_PORT:5432}/maker_checker_db
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+internal:
+  gateway-url: http://api-gateway:8085
+
+services:
+  audit-service:
+    url: http://audit-service:9009
+    enabled: true
+
+logging:
+  level:
+    com.enterprise.makerchecker: INFO

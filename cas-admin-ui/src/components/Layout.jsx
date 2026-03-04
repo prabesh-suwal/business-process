@@ -97,6 +97,17 @@ export default function Layout() {
                                 <span>👥</span> Groups
                             </NavLink>
                         </li>
+                        <li className="nav-section">Operations</li>
+                        <li>
+                            <NavLink to="/maker-checker">
+                                <span>✅</span> Maker-Checker
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink to="/approvals">
+                                <span>📋</span> Approvals
+                            </NavLink>
+                        </li>
                     </ul>
                 </nav>
                 <div style={{ marginTop: 'auto', paddingTop: '24px' }}>

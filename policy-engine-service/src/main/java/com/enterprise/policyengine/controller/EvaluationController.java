@@ -1,5 +1,6 @@
 package com.enterprise.policyengine.controller;
 
+import com.cas.common.dto.RawResponse;
 import com.cas.common.policy.PolicyEvaluationRequest;
 import com.cas.common.policy.PolicyEvaluationResponse;
 import com.enterprise.policyengine.service.EvaluationService;
@@ -17,9 +18,12 @@ import java.util.stream.Collectors;
 /**
  * Controller for authorization evaluation.
  * This is the main endpoint called by other services.
+ * Marked @RawResponse because service-to-service clients expect raw response,
+ * not ApiResponse wrapper.
  */
 @Slf4j
 @RestController
+@RawResponse
 @RequestMapping("/evaluate")
 @RequiredArgsConstructor
 @Tag(name = "Evaluation", description = "Authorization evaluation endpoints")

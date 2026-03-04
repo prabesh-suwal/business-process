@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MemoApi, CasAdminApi, WorkflowConfigApi } from '../lib/api';
+import Guard from '../components/Guard';
 import BpmnDesigner from '../components/BpmnDesigner';
 import CopyWorkflowModal from '../components/CopyWorkflowModal';
 import { Button } from '../components/ui/button';
@@ -821,19 +822,21 @@ const WorkflowDesignerPage = () => {
                                     Save Draft
                                 </Button>
 
-                                <Button
-                                    size="sm"
-                                    onClick={handleSaveAndDeploy}
-                                    disabled={saving || deploying}
-                                    className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/25 border-0 transition-all"
-                                >
-                                    {deploying ? (
-                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white mr-2" />
-                                    ) : (
-                                        <Rocket className="w-4 h-4 mr-2" />
-                                    )}
-                                    Deploy
-                                </Button>
+                                <Guard access="MMS.WORKFLOW.DEPLOY">
+                                    <Button
+                                        size="sm"
+                                        onClick={handleSaveAndDeploy}
+                                        disabled={saving || deploying}
+                                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/25 border-0 transition-all"
+                                    >
+                                        {deploying ? (
+                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white mr-2" />
+                                        ) : (
+                                            <Rocket className="w-4 h-4 mr-2" />
+                                        )}
+                                        Deploy
+                                    </Button>
+                                </Guard>
                             </>
                         )}
                     </div>

@@ -29,8 +29,7 @@ done
 # All Java services (all build via cas-parent reactor)
 JAVA_SERVICES=(
   cas-server
-  admin-gateway
-  gateway-product
+  api-gateway
   memo-service
   workflow-service
   form-service
@@ -40,6 +39,8 @@ JAVA_SERVICES=(
   notification-service
   audit-service
   person-service
+  maker-checker-service
+  swagger-docs-service
 )
 
 # Frontend UIs

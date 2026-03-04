@@ -1,6 +1,10 @@
 // API Configuration - Admin Gateway
 const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || (import.meta.env.PROD ? '' : 'http://localhost:8085');
 
+// Base path for login redirects (e.g. '/admin/login' in production)
+const BASE_URL = (import.meta.env.VITE_BASE_URL || '/').replace(/\/$/, '');
+const LOGIN_PATH = `${BASE_URL}/login`;
+
 
 let accessToken = localStorage.getItem('accessToken');
 let isRefreshing = false;
@@ -84,14 +88,14 @@ async function request(endpoint, options = {}, isRetry = false) {
             isRefreshing = false;
             refreshPromise = null;
             clearToken();
-            window.location.href = '/login';
+            window.location.href = LOGIN_PATH;
             throw new Error('Session expired');
         }
     }
 
     if (response.status === 401) {
         clearToken();
-        window.location.href = '/login';
+        window.location.href = LOGIN_PATH;
         throw new Error('Unauthorized');
     }
 
@@ -101,12 +105,46 @@ async function request(endpoint, options = {}, isRetry = false) {
     }
 
     if (response.status === 204) return null;
+
     const raw = await response.json();
     // Auto-unwrap ApiResponse { success, data, message, timestamp }
     if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'success' in raw) {
+        // Handle maker-checker 202 interception
+        if (response.status === 202 && raw.message) {
+            showToast(raw.message, 'info');
+        }
         return raw.data !== undefined ? raw.data : raw;
     }
     return raw;
+}
+
+/**
+ * Show a lightweight toast notification.
+ * @param {string} message
+ * @param {'success'|'error'|'info'} type
+ */
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    const colors = { success: '#10b981', error: '#ef4444', info: '#3b82f6' };
+    const icons = { success: '✓', error: '✕', info: 'ℹ' };
+    Object.assign(toast.style, {
+        position: 'fixed', top: '24px', right: '24px', zIndex: '10000',
+        display: 'flex', alignItems: 'center', gap: '10px',
+        padding: '14px 20px', borderRadius: '10px',
+        background: 'var(--bg-primary, #1a1a2e)', color: '#fff',
+        boxShadow: `0 4px 24px ${colors[type]}33, 0 1px 4px rgba(0,0,0,0.2)`,
+        borderLeft: `4px solid ${colors[type]}`,
+        fontSize: '14px', fontWeight: '500',
+        animation: 'toast-in 200ms ease-out',
+        transition: 'opacity 300ms, transform 300ms',
+    });
+    toast.innerHTML = `<span style="font-size:18px;color:${colors[type]}">${icons[type]}</span> ${message}`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(20px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
 }
 
 // Auth
@@ -196,7 +234,7 @@ export const auth = {
         sessionStorage.removeItem('sso_check_cas_admin_in_progress');
 
         // Redirect to login
-        window.location.href = '/login';
+        window.location.href = LOGIN_PATH;
     }
 };
 
@@ -542,3 +580,39 @@ export const workflowConfigs = {
         }),
 };
 
+// ==================== MAKER-CHECKER SERVICE ====================
+
+export const makerChecker = {
+    // List configs (optionally filtered by productId)
+    configs: (productId = null) => {
+        let url = '/maker-checker/api/maker-checker/configs';
+        if (productId) url += `?productId=${productId}`;
+        return request(url);
+    },
+    getConfig: (id) => request(`/maker-checker/api/maker-checker/configs/${id}`),
+    createConfig: (data) => request('/maker-checker/api/maker-checker/configs', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    }),
+    updateConfig: (id, data) => request(`/maker-checker/api/maker-checker/configs/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    }),
+    deleteConfig: (id) => request(`/maker-checker/api/maker-checker/configs/${id}`, { method: 'DELETE' }),
+
+    // Approval Requests
+    approvals: (status = null, page = 0, size = 20) => {
+        let url = `/maker-checker/api/maker-checker/approval-requests?page=${page}&size=${size}`;
+        if (status) url += `&status=${status}`;
+        return request(url);
+    },
+    getApproval: (id) => request(`/maker-checker/api/maker-checker/approval-requests/${id}`),
+    approve: (id, data) => request(`/maker-checker/api/maker-checker/approval-requests/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify(data || {})
+    }),
+    reject: (id, data) => request(`/maker-checker/api/maker-checker/approval-requests/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify(data || {})
+    }),
+};

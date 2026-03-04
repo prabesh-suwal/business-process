@@ -5,6 +5,9 @@
 spring:
   application:
     name: organization-service
+  threads:
+    virtual:
+      enabled: true
 
   # Database Configuration
   datasource:

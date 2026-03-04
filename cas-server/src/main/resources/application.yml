@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: cas-server
+  threads:
+    virtual:
+      enabled: true
 
   datasource:
     url: jdbc:postgresql://localhost:5432/cas
@@ -90,3 +93,8 @@ audit:
   service-name: cas-server
   default-product-code: CAS
   enabled: true
+
+# Internal service-to-service communication
+internal:
+  service:
+    token: ${INTERNAL_SERVICE_TOKEN:mc-internal-s3cr3t-token-2026}

@@ -6,7 +6,7 @@
 
 ## for specific service
 ./build.sh --service cas-admin-ui --push
-./build.sh --service memo-ui --push
+./build.sh --service memo-ui --service cas-admin-ui --push
 ./build.sh --service admin-gateway --push
 ./build.sh --service admin-gateway --service cas-admin-ui --push
 
@@ -45,6 +45,7 @@ CREATE DATABASE audit_db;
 CREATE DATABASE person_db;
 CREATE DATABASE integration_db;
 CREATE DATABASE lms_db;
+CREATE DATABASE maker_checker_db;
 EOF
 
 
@@ -58,6 +59,8 @@ EOF
 # THEN
 sudo apt install nginx
 sudo cp /opt/growphase/growphase.conf /etc/nginx/sites-available/
+sudo rm /etc/nginx/sites-enabled/growphase.conf
+sudo rm /etc/nginx/sites-enabled/default
 sudo ln -s /etc/nginx/sites-available/growphase.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
@@ -74,6 +77,11 @@ chmod +x deploy.sh
 
 
 ### DOCKER DOWN SCRIPT
+
+docker compose -f docker-compose.base.yml -f docker-compose.admin.yml -f docker-compose.memo.yml down --remove-orphans
+
+# OR
+
 docker compose -f docker-compose.base.yml down
 docker compose -f docker-compose.admin.yml down
 docker compose -f docker-compose.memo.yml down

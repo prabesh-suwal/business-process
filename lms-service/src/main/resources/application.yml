@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: lms-service
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:localhost}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        service-name: ${spring.application.name}
+        health-check-interval: 10s
+        instance-id: ${spring.application.name}:${random.value}
   datasource:
     url: jdbc:postgresql://localhost:5432/lms_db
     username: postgres

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MemoApi } from '../lib/api';
+import Guard from '../components/Guard';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -162,36 +163,38 @@ function WorkflowsTab() {
                     <CardTitle>Workflow Definitions</CardTitle>
                     <CardDescription>Design approval processes for memo topics.</CardDescription>
                 </div>
-                <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                    <DialogTrigger asChild>
-                        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> New Workflow</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Create Workflow</DialogTitle>
-                            <DialogDescription>Define a new process definition.</DialogDescription>
-                        </DialogHeader>
-                        <form onSubmit={handleCreate}>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="w-key" className="text-right">Key</Label>
-                                    <Input id="w-key" value={newWorkflow.key} onChange={e => setNewWorkflow({ ...newWorkflow, key: e.target.value })} className="col-span-3" placeholder="e.g. memo_approval" required />
+                <Guard access="MMS.CONFIG.MANAGE">
+                    <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                        <DialogTrigger asChild>
+                            <Button size="sm"><Plus className="mr-2 h-4 w-4" /> New Workflow</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Create Workflow</DialogTitle>
+                                <DialogDescription>Define a new process definition.</DialogDescription>
+                            </DialogHeader>
+                            <form onSubmit={handleCreate}>
+                                <div className="grid gap-4 py-4">
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="w-key" className="text-right">Key</Label>
+                                        <Input id="w-key" value={newWorkflow.key} onChange={e => setNewWorkflow({ ...newWorkflow, key: e.target.value })} className="col-span-3" placeholder="e.g. memo_approval" required />
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="w-name" className="text-right">Name</Label>
+                                        <Input id="w-name" value={newWorkflow.name} onChange={e => setNewWorkflow({ ...newWorkflow, name: e.target.value })} className="col-span-3" placeholder="Memo Approval" required />
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="w-desc" className="text-right">Description</Label>
+                                        <Input id="w-desc" value={newWorkflow.description} onChange={e => setNewWorkflow({ ...newWorkflow, description: e.target.value })} className="col-span-3" />
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="w-name" className="text-right">Name</Label>
-                                    <Input id="w-name" value={newWorkflow.name} onChange={e => setNewWorkflow({ ...newWorkflow, name: e.target.value })} className="col-span-3" placeholder="Memo Approval" required />
-                                </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="w-desc" className="text-right">Description</Label>
-                                    <Input id="w-desc" value={newWorkflow.description} onChange={e => setNewWorkflow({ ...newWorkflow, description: e.target.value })} className="col-span-3" />
-                                </div>
-                            </div>
-                            <DialogFooter>
-                                <Button type="submit">Create</Button>
-                            </DialogFooter>
-                        </form>
-                    </DialogContent>
-                </Dialog>
+                                <DialogFooter>
+                                    <Button type="submit">Create</Button>
+                                </DialogFooter>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
+                </Guard>
             </CardHeader>
             <CardContent>
                 <Table>
@@ -304,38 +307,40 @@ function CategoriesTab({ categories, onRefresh }) {
                     <CardTitle>Memo Categories</CardTitle>
                     <CardDescription>Define the high-level categories for memos.</CardDescription>
                 </div>
-                <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                    <DialogTrigger asChild>
-                        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Category</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Add New Category</DialogTitle>
-                            <DialogDescription>Create a new category for grouping memos.</DialogDescription>
-                        </DialogHeader>
-                        <form onSubmit={handleSubmit}>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="code" className="text-right">Code</Label>
-                                    <Input id="code" value={newCategory.code} onChange={e => setNewCategory({ ...newCategory, code: e.target.value })} className="col-span-3" required />
+                <Guard access="MMS.CONFIG.MANAGE">
+                    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                        <DialogTrigger asChild>
+                            <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Category</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Add New Category</DialogTitle>
+                                <DialogDescription>Create a new category for grouping memos.</DialogDescription>
+                            </DialogHeader>
+                            <form onSubmit={handleSubmit}>
+                                <div className="grid gap-4 py-4">
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="code" className="text-right">Code</Label>
+                                        <Input id="code" value={newCategory.code} onChange={e => setNewCategory({ ...newCategory, code: e.target.value })} className="col-span-3" required />
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="name" className="text-right">Name</Label>
+                                        <Input id="name" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} className="col-span-3" required />
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="desc" className="text-right">Description</Label>
+                                        <Input id="desc" value={newCategory.description} onChange={e => setNewCategory({ ...newCategory, description: e.target.value })} className="col-span-3" />
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="name" className="text-right">Name</Label>
-                                    <Input id="name" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} className="col-span-3" required />
-                                </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="desc" className="text-right">Description</Label>
-                                    <Input id="desc" value={newCategory.description} onChange={e => setNewCategory({ ...newCategory, description: e.target.value })} className="col-span-3" />
-                                </div>
-                            </div>
-                            <DialogFooter>
-                                <Button type="submit" disabled={submitting}>
-                                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
-                                </Button>
-                            </DialogFooter>
-                        </form>
-                    </DialogContent>
-                </Dialog>
+                                <DialogFooter>
+                                    <Button type="submit" disabled={submitting}>
+                                        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
+                                    </Button>
+                                </DialogFooter>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
+                </Guard>
             </CardHeader>
             <CardContent>
                 <Table>
@@ -461,49 +466,51 @@ function TopicsTab({ categories }) {
                             <CardTitle>Memo Topics</CardTitle>
                             <CardDescription>Topics belong to categories and define specific memo types. Design workflows and forms for each.</CardDescription>
                         </div>
-                        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                            <DialogTrigger asChild>
-                                <Button size="sm" disabled={!selectedCategory}><Plus className="mr-2 h-4 w-4" /> Add Topic</Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Add New Topic</DialogTitle>
-                                    <DialogDescription>Create a topic under the selected category.</DialogDescription>
-                                </DialogHeader>
-                                <form onSubmit={handleSubmit}>
-                                    <div className="grid gap-4 py-4">
-                                        <div className="grid grid-cols-4 items-center gap-4">
-                                            <Label htmlFor="t-code" className="text-right">Code</Label>
-                                            <Input id="t-code" value={newTopic.code} onChange={e => setNewTopic({ ...newTopic, code: e.target.value })} className="col-span-3" required />
+                        <Guard access="MMS.CONFIG.MANAGE">
+                            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                                <DialogTrigger asChild>
+                                    <Button size="sm" disabled={!selectedCategory}><Plus className="mr-2 h-4 w-4" /> Add Topic</Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                    <DialogHeader>
+                                        <DialogTitle>Add New Topic</DialogTitle>
+                                        <DialogDescription>Create a topic under the selected category.</DialogDescription>
+                                    </DialogHeader>
+                                    <form onSubmit={handleSubmit}>
+                                        <div className="grid gap-4 py-4">
+                                            <div className="grid grid-cols-4 items-center gap-4">
+                                                <Label htmlFor="t-code" className="text-right">Code</Label>
+                                                <Input id="t-code" value={newTopic.code} onChange={e => setNewTopic({ ...newTopic, code: e.target.value })} className="col-span-3" required />
+                                            </div>
+                                            <div className="grid grid-cols-4 items-center gap-4">
+                                                <Label htmlFor="t-name" className="text-right">Name</Label>
+                                                <Input id="t-name" value={newTopic.name} onChange={e => setNewTopic({ ...newTopic, name: e.target.value })} className="col-span-3" required />
+                                            </div>
+                                            <div className="grid grid-cols-4 items-center gap-4">
+                                                <Label htmlFor="t-desc" className="text-right">Description</Label>
+                                                <Input id="t-desc" value={newTopic.description} onChange={e => setNewTopic({ ...newTopic, description: e.target.value })} className="col-span-3" />
+                                            </div>
+                                            <div className="grid grid-cols-4 items-center gap-4">
+                                                <Label htmlFor="t-pattern" className="text-right">Numbering</Label>
+                                                <Input
+                                                    id="t-pattern"
+                                                    value={newTopic.numberingPattern}
+                                                    onChange={e => setNewTopic({ ...newTopic, numberingPattern: e.target.value })}
+                                                    className="col-span-3"
+                                                    placeholder="e.g., CAM-%FY%-%SEQ%"
+                                                    required
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="grid grid-cols-4 items-center gap-4">
-                                            <Label htmlFor="t-name" className="text-right">Name</Label>
-                                            <Input id="t-name" value={newTopic.name} onChange={e => setNewTopic({ ...newTopic, name: e.target.value })} className="col-span-3" required />
-                                        </div>
-                                        <div className="grid grid-cols-4 items-center gap-4">
-                                            <Label htmlFor="t-desc" className="text-right">Description</Label>
-                                            <Input id="t-desc" value={newTopic.description} onChange={e => setNewTopic({ ...newTopic, description: e.target.value })} className="col-span-3" />
-                                        </div>
-                                        <div className="grid grid-cols-4 items-center gap-4">
-                                            <Label htmlFor="t-pattern" className="text-right">Numbering</Label>
-                                            <Input
-                                                id="t-pattern"
-                                                value={newTopic.numberingPattern}
-                                                onChange={e => setNewTopic({ ...newTopic, numberingPattern: e.target.value })}
-                                                className="col-span-3"
-                                                placeholder="e.g., CAM-%FY%-%SEQ%"
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <DialogFooter>
-                                        <Button type="submit" disabled={submitting}>
-                                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
-                                        </Button>
-                                    </DialogFooter>
-                                </form>
-                            </DialogContent>
-                        </Dialog>
+                                        <DialogFooter>
+                                            <Button type="submit" disabled={submitting}>
+                                                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
+                                            </Button>
+                                        </DialogFooter>
+                                    </form>
+                                </DialogContent>
+                            </Dialog>
+                        </Guard>
                     </div>
 
                     <div className="flex items-center space-x-2">

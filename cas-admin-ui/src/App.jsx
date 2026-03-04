@@ -22,6 +22,8 @@ import WorkflowConfigsPage from './pages/WorkflowConfigsPage'
 import FormsPage from './pages/FormsPage'
 import FormDesignerPage from './pages/FormDesignerPage'
 import FormPreviewPage from './pages/FormPreviewPage'
+import MakerCheckerPage from './pages/MakerCheckerPage'
+import ApprovalsPage from './pages/ApprovalsPage'
 
 function PrivateRoute({ children }) {
     const token = getToken();
@@ -63,6 +65,9 @@ export default function App() {
                 {/* Form Management */}
                 <Route path="forms" element={<FormsPage />} />
                 <Route path="forms/:id/design" element={<FormDesignerPage />} />
+                {/* Maker-Checker */}
+                <Route path="maker-checker" element={<MakerCheckerPage />} />
+                <Route path="approvals" element={<ApprovalsPage />} />
             </Route>
         </Routes>
     );
